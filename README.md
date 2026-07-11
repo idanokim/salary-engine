@@ -8,7 +8,9 @@ slip as **valid (תקין)** or **invalid (שגוי)**. Built with FastAPI.
 📖 **How the engine works:** see [`ENGINE.md`](ENGINE.md) — "the brain of the simulator".
 
 The pay tables (75 grades, 9 seniority tracks, per-track caps) are extracted
-from the Progim workbook into `lookups.json` via `tools/extract_lookups.py`.
+from the Progim workbook into `lookups.json` via `tools/extract_lookups.py`,
+and the component rules (החוקה — percentage bases/rates per pay code, plus the
+manual 'ידני' codes) into `component_rules.json` via `tools/extract_rules.py`.
 
 ## Live endpoints (once deployed)
 
@@ -22,6 +24,7 @@ from the Progim workbook into `lookups.json` via `tools/extract_lookups.py`.
 | `/api/batch` | POST | Upload a גולמי .xlsx → results .xlsx with two tabs: **תקין** (valid) and **לבדיקה** (everything else) |
 | `/api/export-highlighted` | POST | Upload a גולמי .xlsx → the same גולמי-מעודכן pivot back, with every invalid pay code and wrong total marked **yellow** |
 | `/api/lookups` | GET | Full lookup tables (darga/vetek/caps) — lets the web UI run the engine **in the browser** |
+| `/api/rules` | GET | Component rules (החוקה) from the Progim workbook — percentage bases/rates + manual (ידני) codes |
 
 > **Browser-side file checking:** the web UI parses and validates גולמי files
 > **locally in the browser** (SheetJS + `engine.js`, the same logic as the API),
