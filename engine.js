@@ -326,7 +326,10 @@
       allChecks.push(checks);
       results.push(r);
     }
-    if (!rules) return results;
+    if (!rules) {
+      for (const r of results) r.findings = diagnoseResult(lk, r);
+      return results;
+    }
     // Pass B — self-calibrate rule trust on this file, then attach flags.
     const trusted = trustedRuleCodes(allChecks);
     for (let i = 0; i < results.length; i++) {
@@ -338,8 +341,126 @@
       if (flagged.length) {
         if (r.status === STATUS.VALID) { r.status = STATUS.INVALID; r.total_match = false; }
       }
+      r.findings = diagnoseResult(lk, r);
     }
     return results;
+  }
+
+  // --- דוח שגויים: itemized error diagnosis per non-valid slip ---------------
+  // Mirrors diagnose_entry() in main.py — keep the two in sync. Each finding:
+  // {category, code?, name?, slip?, expected?, diff?, note} where diff is
+  // always בתלוש minus תקני.
+  const BASE_NAMES = { 1: 'יסוד משולב', 10002: 'שכר משולב', 2: 'תוספת ותק' };
+  const STATUS_HE = { valid: 'תקין', invalid: 'שגוי',
+                      no_base: 'ללא שכר בסיס פעיל', multi_period: 'רטרו / רב-תקופתי' };
+
+  function impliedVatek(lk, track, impliedMult) {
+    const t = lk.vetek[parseInt(track, 10) || DEFAULT_TRACK] || lk.vetek[DEFAULT_TRACK];
+    if (!t) return null;
+    let best = null, bestGap = Infinity;
+    for (const [v, m] of t.pairs) {
+      const g = Math.abs(m - impliedMult);
+      if (g < bestGap) { bestGap = g; best = v; }
+    }
+    return bestGap <= 0.01 ? best : null;
+  }
+
+  function diagnoseResult(lk, r) {
+    const findings = [];
+    if (r.status === STATUS.NO_BASE) {
+      if (Math.abs(r.expected_total || 0) <= MATCH_THRESHOLD) {
+        findings.push({ category: 'תלוש ריק', note: 'אין סכומים בתלוש (סה"כ ≈ 0)' });
+      } else {
+        findings.push({ category: 'ללא שכר בסיס פעיל',
+          note: `אין רכיב בסיס (יסוד/משולב) פעיל; סה"כ שאר הרכיבים ${r.expected_total}` });
+      }
+      return findings;
+    }
+    if (r.status === STATUS.MULTI) {
+      findings.push({ category: 'רטרו / רב-תקופתי',
+        note: 'רכיב בסיס ראשי מופיע יותר מפעם אחת — תלוש מרובה תקופות שכר' });
+      return findings;
+    }
+    if (r.status !== STATUS.INVALID) return findings;
+
+    if (r.grade_base === null || r.grade_base === undefined) {
+      findings.push({ category: 'דרגה לא מוכרת',
+        note: `דרגה '${r.darga_label}' לא נמצאה בטבלת השכר (קוד דרגה ${r.kod_darga})` });
+    }
+
+    let baseSlip = 0, baseExp = 0;
+    const baseComps = [];
+    for (const c of r.components) {
+      if (c.calculated && BASE_NAMES[c.code]) {
+        baseSlip += (c.expected || 0); baseExp += c.amount;
+        baseComps.push(c);
+      }
+    }
+    const baseGap = round2(baseSlip - baseExp);
+    if (Math.abs(baseGap) > MATCH_THRESHOLD && baseExp > 0) {
+      const ratio = baseSlip / baseExp;
+      const doubled = Math.abs(ratio - 2.0) <= 0.01;
+      if (doubled) {
+        findings.push({ category: 'בסיס כפול (2×)',
+          slip: round2(baseSlip), expected: round2(baseExp), diff: baseGap,
+          note: 'סכומי הבסיס בתלוש כפולים בדיוק מהתקן — חשד לתלוש רטרו / שתי תקופות מאוחדות' });
+      }
+      baseComps.sort((a, b) => a.code - b.code);
+      for (const c of baseComps) {
+        const gap = round2((c.expected || 0) - c.amount);
+        if (Math.abs(gap) > MATCH_THRESHOLD) {
+          findings.push({ category: `פער ב${BASE_NAMES[c.code]}`,
+            code: c.code, name: BASE_NAMES[c.code],
+            slip: round2(c.expected || 0), expected: round2(c.amount), diff: gap });
+        }
+      }
+      if (r.grade_base && !doubled) {
+        const implied = baseSlip / (r.grade_base * (r.job_pct || 1.0));
+        const v = impliedVatek(lk, r.droog, implied);
+        if (v !== null) {
+          const yearsGap = round2(v - (r.vatek || 0));
+          if (Math.abs(yearsGap) >= 0.5) {
+            findings.push({ category: 'ותק משתמע שונה מהרשום',
+              note: `הבסיס בתלוש תואם ותק של כ-${v} שנים (מקדם ${round(implied, 4)}), ` +
+                    `לעומת ${r.vatek} הרשום — פער ${yearsGap} שנים; ` +
+                    `ייתכן ותק-לתשלום שונה או שינוי דרגה במהלך החודש` });
+          }
+        }
+      }
+    }
+
+    const flagKeys = Object.keys(r.comp_flags || {}).sort((a, b) => a - b);
+    for (const k of flagKeys) {
+      const chk = r.comp_flags[k];
+      findings.push({ category: `פער ב${chk.name}`, code: parseInt(k, 10), name: chk.name,
+        slip: chk.slip, expected: chk.expected, diff: round2(chk.slip - chk.expected),
+        note: 'לפי נוסחת החוקה (אחוז × סמלי הבסיס בתלוש)' });
+    }
+
+    if (!findings.length) {
+      findings.push({ category: 'פער כולל',
+        slip: r.expected_total, expected: r.total,
+        diff: round2((r.expected_total || 0) - (r.total || 0)),
+        note: 'הסכום הכולל אינו תואם את החישוב' });
+    }
+    return findings;
+  }
+
+  const REPORT_HEADERS = ['מספר עובד', 'קוד משרד', 'שם משרד', 'דרגה', 'ותק', 'חלקיות',
+    'סטטוס', 'קטגוריית שגיאה', 'סמל', 'שם רכיב', 'בתלוש', 'תקני', 'הפרש', 'פירוט'];
+
+  function reportRows(results) {
+    const rows = [];
+    for (const r of results) {
+      if (r.status === STATUS.VALID) continue;
+      for (const f of (r.findings || [])) {
+        rows.push([r.worker_id, r.ministry_code, r.ministry_name, r.darga_label,
+          r.vatek, r.job_pct, STATUS_HE[r.status] || r.status,
+          f.category ?? null, f.code ?? null, f.name ?? null,
+          f.slip ?? null, f.expected ?? null, f.diff ?? null, f.note ?? null]);
+      }
+    }
+    return rows;
   }
 
   function accuracyReport(results, elapsedSec) {
@@ -387,6 +508,11 @@
         code: parseInt(k, 10), name: r.comp_flags[k].name, slip: r.comp_flags[k].slip,
         computed: r.comp_flags[k].expected, diff: r.comp_flags[k].diff,
       }))),
+      findings: (r.findings || []).map((f) => ({
+        category: f.category,
+        text: f.note || (f.code !== undefined && f.slip !== undefined
+          ? `בתלוש ${f.slip} · תקני ${f.expected} · הפרש ${f.diff}` : ''),
+      })),
     }));
     return {
       total_workers: total, matched: valid, unmatched: invalid, no_base, multi_period: multi,
@@ -470,6 +596,7 @@
     MATCH_THRESHOLD, STATUS, round2,
     prepLookups, prepRules, getGradeBase, getVatekMultiplier, baseWithinTolerance,
     checkWorkerComponents, trustedRuleCodes, resolvePlusGrades,
+    diagnoseResult, reportRows, REPORT_HEADERS,
     classifyHeader, loadGolmi, calculate, runEngine,
     accuracyReport, batchCSV, BATCH_COLUMNS, batchRow, buildPivot,
   };
