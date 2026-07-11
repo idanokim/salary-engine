@@ -72,13 +72,15 @@ header.site .wrap{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 
 /* ---- Tabs ---- */
 nav.tabs{background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:20;box-shadow:var(--shadow-sm)}
-nav.tabs .wrap{display:flex;gap:4px}
+nav.tabs .wrap{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}
+nav.tabs .wrap::-webkit-scrollbar{display:none}
 .tab{
   appearance:none;border:none;background:none;font-family:inherit;cursor:pointer;
   font-size:15px;font-weight:500;color:var(--muted);padding:16px 18px;
   border-bottom:2.5px solid transparent;transition:color .15s,border-color .15s;
-  display:inline-flex;align-items:center;gap:8px;
+  display:inline-flex;align-items:center;gap:8px;flex-shrink:0;white-space:nowrap;
 }
+@media(max-width:620px){.tab{padding:14px 12px;font-size:14px}}
 .tab:hover{color:var(--fg)}
 .tab svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8}
 .tab.active{color:var(--primary);border-bottom-color:var(--secondary);font-weight:600}
@@ -308,14 +310,6 @@ code{font-family:var(--mono);background:var(--muted-bg);padding:1px 6px;border-r
       <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
       בדיקת קובץ
     </button>
-    <button class="tab" role="tab" onclick="showTab('export')">
-      <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
-      גולמי מסומן
-    </button>
-    <button class="tab" role="tab" onclick="showTab('batch')">
-      <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
-      יצוא תוצאות
-    </button>
     <button class="tab" role="tab" onclick="showTab('logic')">
       <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>
       איך זה עובד
@@ -420,7 +414,8 @@ code{font-family:var(--mono);background:var(--muted-bg);padding:1px 6px;border-r
           <div class="progress" id="acc-prog"><div class="fill" id="acc-bar"></div></div>
           <div class="alert" id="acc-err" role="alert"></div>
           <p class="helper" style="margin-top:14px">הקובץ מנותח מול מנוע השכר; כל עובד מסומן כ<strong>תלוש תקין</strong> (הפרש ≤ ₪1) או <strong>שגוי</strong>.
-             העיבוד מתבצע ב<strong>דפדפן</strong> — הקובץ אינו נשלח לשרת, ואין מגבלת גודל.</p>
+             העיבוד מתבצע ב<strong>דפדפן</strong> — הקובץ אינו נשלח לשרת, ואין מגבלת גודל.
+             לאחר הבדיקה ניתן להוריד מכאן גם את <strong>הגולמי המסומן</strong> וגם את <strong>יצוא התוצאות</strong>.</p>
         </div>
       </div>
 
@@ -448,6 +443,22 @@ code{font-family:var(--mono);background:var(--muted-bg);padding:1px 6px;border-r
             <div class="stat"><div class="k">הפרש ממוצע</div><div class="v sm"><span class="num" id="a-avg"></span></div></div>
             <div class="stat"><div class="k">הפרש מרבי</div><div class="v sm"><span class="num" id="a-max"></span></div></div>
           </div>
+
+          <div class="section-label">הורדות</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:6px">
+            <button type="button" class="btn" id="dl-export-btn" onclick="downloadHighlighted()">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+              גולמי מסומן — שגיאות בצהוב
+            </button>
+            <button type="button" class="btn" id="dl-batch-btn" onclick="downloadBatch()">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+              יצוא תוצאות — תקין / לבדיקה
+            </button>
+          </div>
+          <p class="helper" style="margin-bottom:18px">
+            <strong>גולמי מסומן</strong> — אותו מבנה "גולמי מעודכן", רק התאים השגויים צבועים בצהוב עם הערך התקני בהערה.
+            <strong>יצוא תוצאות</strong> — קובץ Excel עם שתי לשוניות: תקין ולבדיקה.</p>
+          <div class="filename" id="dl-filename"></div>
           <table>
             <thead><tr><th>משרד / גוף</th><th>עובדים</th><th>תקינים</th><th>תקינות</th><th class="match-cell"></th></tr></thead>
             <tbody id="ministry-tbody"></tbody>
@@ -457,45 +468,6 @@ code{font-family:var(--mono);background:var(--muted-bg);padding:1px 6px;border-r
           <p class="helper" id="mm-hint" style="display:none">לחץ על תלוש כדי לראות היכן נוצר הפער ומדוע.</p>
           <div id="mismatch-list"></div>
         </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============ TAB: highlighted גולמי export ============ -->
-  <section class="pane" id="pane-export">
-    <div class="card" style="max-width:560px;margin:0 auto">
-      <div class="card-head"><h2>ייצוא גולמי מעודכן מסומן</h2></div>
-      <div class="card-body">
-        <p class="muted-p">מחזיר את הקובץ ב<strong>אותו מבנה של "גולמי מעודכן"</strong>, ומסמן ב<span style="background:#FFFF00;padding:0 4px;border-radius:3px">צהוב</span>
-           רק את מה שאינו תקין: סמלי השכר שסכומם שגוי, ואת הסכום הכולל השגוי (עמודה CO).
-           על כל תא מסומן יש הערה עם הערך התקני שהמנוע חישב. העיבוד מתבצע בדפדפן — ללא העלאה לשרת וללא מגבלת גודל.</p>
-        <label class="upload" id="export-zone">
-          <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
-          <h3>בחר קובץ ‎.xlsx</h3>
-          <p>מחזיר קובץ ‎.xlsx‎ עם התאים השגויים מסומנים בצהוב</p>
-          <input type="file" accept=".xlsx" onchange="runExport(this)">
-        </label>
-        <div class="filename" id="export-filename"></div>
-        <div class="progress" id="export-prog"><div class="fill" id="export-bar"></div></div>
-        <div class="alert" id="export-err" role="alert"></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============ TAB: batch CSV ============ -->
-  <section class="pane" id="pane-batch">
-    <div class="card" style="max-width:560px;margin:0 auto">
-      <div class="card-head"><h2>יצוא תוצאות — תקין / לבדיקה</h2></div>
-      <div class="card-body">
-        <label class="upload" id="batch-zone">
-          <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
-          <h3>בחר קובץ ‎.xlsx</h3>
-          <p>מחזיר קובץ Excel עם שתי לשוניות: <strong>תקין</strong> ו<strong>לבדיקה</strong></p>
-          <input type="file" accept=".xlsx" onchange="runBatch(this)">
-        </label>
-        <div class="filename" id="batch-filename"></div>
-        <div class="progress" id="batch-prog"><div class="fill" id="batch-bar"></div></div>
-        <div class="alert" id="batch-err" role="alert"></div>
       </div>
     </div>
   </section>
@@ -664,7 +636,7 @@ async function loadGrades(){
 }
 
 function showTab(name){
-  const names=['calc','accuracy','export','batch','logic'];
+  const names=['calc','accuracy','logic'];
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',names[i]===name));
   document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('active',p.id==='pane-'+name));
 }
@@ -818,13 +790,19 @@ function downloadBlob(blob,name){
 }
 function dateStamp(){ return new Date().toISOString().slice(0,10); } // YYYY-MM-DD
 
+// The last processed file's results — the downloads (highlighted גולמי /
+// valid-vs-review export) are generated from these, so one upload serves all.
+let _lastResults=null;
+
 async function runAccuracy(input){
   const file=input.files[0]; if(!file) return;
   const fn=document.getElementById('acc-filename'); fn.textContent=file.name; fn.style.display='block'; fn.style.color='';
   showError('acc',''); setProgress('acc',15);
+  const dl=document.getElementById('dl-filename'); dl.textContent=''; dl.style.display='none';
   try{
     setProgress('acc',40);
     const {results,elapsed}=await processFileLocally(file); setProgress('acc',85);
+    _lastResults=results;
     renderAccuracy(SalaryEngine.accuracyReport(results,elapsed));
     setProgress('acc',100);
   }catch(e){ showError('acc',e.message||String(e)); }
@@ -909,29 +887,37 @@ function explainHTML(m){
   return h;
 }
 
-async function runBatch(input){
-  const file=input.files[0]; if(!file) return;
-  const fn=document.getElementById('batch-filename'); fn.textContent=file.name; fn.style.display='block'; fn.style.color='';
-  showError('batch',''); setProgress('batch',15);
-  try{
-    if(typeof ExcelJS==='undefined') throw new Error('ספריית כתיבת האקסל לא נטענה — בדוק את חיבור האינטרנט.');
-    const {results}=await processFileLocally(file); setProgress('batch',60);
-    // Two tabs: 'תקין' (valid) and 'לבדיקה' (everything else — the status column
-    // distinguishes שגוי / ללא בסיס / רטרו within it).
-    const valid=results.filter(r=>r.status==='valid');
-    const review=results.filter(r=>r.status!=='valid');
+// Both downloads run off _lastResults (set by runAccuracy) — no second upload.
+function dlStatus(msg,ok){
+  const el=document.getElementById('dl-filename');
+  el.textContent=msg; el.style.display='block'; el.style.color=ok?'var(--green)':'';
+}
+async function withDlButton(btnId,fn){
+  const btn=document.getElementById(btnId);
+  if(!_lastResults){ showError('acc','יש לבדוק קובץ תחילה.'); return; }
+  if(typeof ExcelJS==='undefined'){ showError('acc','ספריית כתיבת האקסל לא נטענה — בדוק את חיבור האינטרנט.'); return; }
+  showError('acc',''); btn.disabled=true;
+  try{ await fn(); }
+  catch(e){ showError('acc',e.message||String(e)); }
+  finally{ btn.disabled=false; }
+}
+
+async function downloadBatch(){
+  await withDlButton('dl-batch-btn',async()=>{
+    // Two sheets: 'תקין' (valid) and 'לבדיקה' (everything else — the status
+    // column distinguishes שגוי / ללא בסיס / רטרו within it).
+    const valid=_lastResults.filter(r=>r.status==='valid');
+    const review=_lastResults.filter(r=>r.status!=='valid');
     const wb=new ExcelJS.Workbook();
     for(const [name,subset] of [['תקין',valid],['לבדיקה',review]]){
       const ws=wb.addWorksheet(name,{views:[{rightToLeft:true}]});
       ws.addRow(SalaryEngine.BATCH_COLUMNS).font={bold:true};
       for(const r of subset) ws.addRow(SalaryEngine.batchRow(r));
     }
-    const buf=await wb.xlsx.writeBuffer(); setProgress('batch',95);
+    const buf=await wb.xlsx.writeBuffer();
     downloadBlob(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),`תוצאות בדיקת שכר - תקין ולבדיקה ${dateStamp()}.xlsx`);
-    setProgress('batch',100); setTimeout(()=>setProgress('batch',null),500);
-    document.getElementById('batch-zone').style.borderColor='var(--green)';
-    fn.textContent=`הקובץ הורד · תקין ${valid.length.toLocaleString()} · לבדיקה ${review.length.toLocaleString()}`; fn.style.color='var(--green)';
-  }catch(e){ showError('batch',e.message||String(e)); setTimeout(()=>setProgress('batch',null),500); }
+    dlStatus(`יצוא התוצאות הורד · תקין ${valid.length.toLocaleString()} · לבדיקה ${review.length.toLocaleString()}`,true);
+  });
 }
 
 // Build the highlighted "גולמי מעודכן" pivot in the browser with ExcelJS (cell
@@ -972,20 +958,12 @@ async function buildHighlightedWorkbook(pivot){
           nFlagged, nInvalid, nWorkers:pivot.rows.length};
 }
 
-async function runExport(input){
-  const file=input.files[0]; if(!file) return;
-  const fn=document.getElementById('export-filename'); fn.textContent=file.name; fn.style.display='block'; fn.style.color='';
-  showError('export',''); setProgress('export',15);
-  try{
-    if(typeof ExcelJS==='undefined') throw new Error('ספריית כתיבת האקסל לא נטענה — בדוק את חיבור האינטרנט.');
-    const {results}=await processFileLocally(file); setProgress('export',55);
-    const out=await buildHighlightedWorkbook(SalaryEngine.buildPivot(results)); setProgress('export',95);
+async function downloadHighlighted(){
+  await withDlButton('dl-export-btn',async()=>{
+    const out=await buildHighlightedWorkbook(SalaryEngine.buildPivot(_lastResults));
     downloadBlob(out.blob,`גולמי מסומן - שגיאות בצהוב ${dateStamp()}.xlsx`);
-    setProgress('export',100); setTimeout(()=>setProgress('export',null),500);
-    document.getElementById('export-zone').style.borderColor='var(--green)';
-    fn.textContent=`הקובץ הורד · ${out.nWorkers.toLocaleString()} עובדים · ${out.nInvalid.toLocaleString()} שגויים · ${out.nFlagged.toLocaleString()} תאים מסומנים`;
-    fn.style.color='var(--green)';
-  }catch(e){ showError('export',e.message||String(e)); setTimeout(()=>setProgress('export',null),500); }
+    dlStatus(`הגולמי המסומן הורד · ${out.nWorkers.toLocaleString()} עובדים · ${out.nInvalid.toLocaleString()} שגויים · ${out.nFlagged.toLocaleString()} תאים מסומנים`,true);
+  });
 }
 
 document.querySelectorAll('.upload').forEach(z=>{
