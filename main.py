@@ -527,17 +527,173 @@ def run_engine_full(workers_raw: dict, lookups: dict) -> list:
                 result.errors.append(
                     f"רכיב {code} ({chk['name']}): בתלוש {chk['slip']}, "
                     f"תקני {chk['expected']} (הפרש {chk['diff']})")
+        e["findings"] = diagnose_entry(e, lookups)
     return entries
 
 
+# ---------------------------------------------------------------------------
+# דוח שגויים — itemized error diagnosis per non-valid slip.
+#
+# Every slip that is not תקין gets a precise, human-readable list of findings:
+# what exactly is wrong, where, and by how much — e.g. תלוש ריק, בסיס כפול
+# (2×, retro suspicion), פער ביסוד משולב, פער בתוספת ותק with the implied
+# seniority the slip actually paid, or a gap in a specific חוקה component
+# (גמול השתלמות, תוספת 3.6%...). The report ships as a "דוח שגויים" sheet in
+# both exports.
+# ---------------------------------------------------------------------------
+BASE_NAMES = {CODE_YESOD: "יסוד משולב", CODE_COMBINED_BASE: "שכר משולב",
+              CODE_VETEK_TOSEFET: "תוספת ותק"}
+STATUS_HE = {STATUS_VALID: "תקין", STATUS_INVALID: "שגוי",
+             STATUS_NO_BASE: "ללא שכר בסיס פעיל", STATUS_MULTI: "רטרו / רב-תקופתי"}
+
+
+def implied_vatek(lookups, track, implied_mult):
+    """The seniority (grid point) whose multiplier best matches implied_mult,
+    or None when nothing on the track's grid comes close."""
+    table = lookups["vetek_by_track"].get(int(track or DEFAULT_TRACK)) or {}
+    if not table:
+        return None
+    best = min(table, key=lambda v: abs(table[v] - implied_mult))
+    return best if abs(table[best] - implied_mult) <= 0.01 else None
+
+
+def diagnose_entry(entry, lookups) -> list:
+    """Itemized findings for one worker. Each finding:
+    {category, code?, name?, slip?, expected?, diff?, note} — הפרש is always
+    בתלוש minus תקני (positive = the slip pays more than the rulebook)."""
+    result = entry["result"]
+    findings = []
+    if result.status == STATUS_NO_BASE:
+        if abs(result.expected_total or 0) <= MATCH_THRESHOLD:
+            findings.append({"category": "תלוש ריק",
+                             "note": "אין סכומים בתלוש (סה\"כ ≈ 0)"})
+        else:
+            findings.append({"category": "ללא שכר בסיס פעיל",
+                             "note": f"אין רכיב בסיס (יסוד/משולב) פעיל; "
+                                     f"סה\"כ שאר הרכיבים {result.expected_total}"})
+        return findings
+    if result.status == STATUS_MULTI:
+        findings.append({"category": "רטרו / רב-תקופתי",
+                         "note": "רכיב בסיס ראשי מופיע יותר מפעם אחת — "
+                                 "תלוש מרובה תקופות שכר"})
+        return findings
+    if result.status != STATUS_INVALID:
+        return findings
+
+    if result.grade_base is None:
+        findings.append({"category": "דרגה לא מוכרת",
+                         "note": f"דרגה '{result.darga_label}' לא נמצאה בטבלת השכר "
+                                 f"(קוד דרגה {result.kod_darga})"})
+
+    # Base-component gaps (יסוד משולב / תוספת ותק / שכר משולב).
+    base_slip = base_exp = 0.0
+    base_comps = {}
+    for c in result.components:
+        if c.calculated and c.code in BASE_NAMES:
+            base_slip += (c.expected or 0.0)
+            base_exp += c.amount
+            base_comps[c.code] = c
+    base_gap = round(base_slip - base_exp, 2)
+    if abs(base_gap) > MATCH_THRESHOLD and base_exp > 0:
+        ratio = base_slip / base_exp
+        doubled = abs(ratio - 2.0) <= 0.01
+        if doubled:
+            findings.append({"category": "בסיס כפול (2×)",
+                             "slip": round(base_slip, 2), "expected": round(base_exp, 2),
+                             "diff": base_gap,
+                             "note": "סכומי הבסיס בתלוש כפולים בדיוק מהתקן — "
+                                     "חשד לתלוש רטרו / שתי תקופות מאוחדות"})
+        for code in sorted(base_comps):
+            c = base_comps[code]
+            gap = round((c.expected or 0.0) - c.amount, 2)
+            if abs(gap) > MATCH_THRESHOLD:
+                findings.append({"category": f"פער ב{BASE_NAMES[code]}",
+                                 "code": code, "name": BASE_NAMES[code],
+                                 "slip": round(c.expected or 0.0, 2),
+                                 "expected": round(c.amount, 2), "diff": gap})
+        # What seniority does the slip's base actually correspond to?
+        if result.grade_base and not doubled:
+            implied = base_slip / (result.grade_base * (result.job_pct or 1.0))
+            v = implied_vatek(lookups, result.droog, implied)
+            if v is not None:
+                years_gap = round(v - float(result.vatek_calculated or 0), 2)
+                if abs(years_gap) >= 0.5:
+                    findings.append({
+                        "category": "ותק משתמע שונה מהרשום",
+                        "note": f"הבסיס בתלוש תואם ותק של כ-{v} שנים "
+                                f"(מקדם {round(implied, 4)}), לעומת "
+                                f"{result.vatek_calculated} הרשום — פער "
+                                f"{years_gap} שנים; ייתכן ותק-לתשלום שונה "
+                                f"או שינוי דרגה במהלך החודש"})
+
+    # חוקה component gaps (גמול השתלמות, תוספת 3.6%, הסכמי שכר...).
+    for code, chk in sorted(entry.get("comp_flags", {}).items()):
+        findings.append({"category": f"פער ב{chk['name']}",
+                         "code": code, "name": chk["name"],
+                         "slip": chk["slip"], "expected": chk["expected"],
+                         "diff": round(chk["slip"] - chk["expected"], 2),
+                         "note": "לפי נוסחת החוקה (אחוז × סמלי הבסיס בתלוש)"})
+
+    if not findings:
+        findings.append({"category": "פער כולל",
+                         "slip": result.expected_total, "expected": result.total,
+                         "diff": round((result.expected_total or 0) - (result.total or 0), 2),
+                         "note": "הסכום הכולל אינו תואם את החישוב"})
+    return findings
+
+
+REPORT_HEADERS = ["מספר עובד", "קוד משרד", "שם משרד", "דרגה", "ותק", "חלקיות",
+                  "סטטוס", "קטגוריית שגיאה", "סמל", "שם רכיב",
+                  "בתלוש", "תקני", "הפרש", "פירוט"]
+
+
+def findings_report_rows(entries) -> list:
+    """Flatten the per-worker findings into דוח-שגויים rows (non-valid only)."""
+    rows = []
+    for e in entries:
+        r = e["result"]
+        if r.status == STATUS_VALID:
+            continue
+        for f in e.get("findings", []):
+            rows.append([
+                r.worker_id, r.ministry_code, r.ministry_name, r.darga_label,
+                r.vatek_calculated, r.job_pct, STATUS_HE.get(r.status, r.status),
+                f.get("category"), f.get("code"), f.get("name"),
+                f.get("slip"), f.get("expected"), f.get("diff"), f.get("note"),
+            ])
+    return rows
+
+
+def append_report_sheet(wb, entries):
+    """Add the דוח-שגויים sheet to a write-only workbook."""
+    ws = wb.create_sheet("דוח שגויים")
+    ws.sheet_view.rightToLeft = True
+    header = []
+    for h in REPORT_HEADERS:
+        c = WriteOnlyCell(ws, value=h)
+        c.font = Font(bold=True)
+        header.append(c)
+    ws.append(header)
+    for row in findings_report_rows(entries):
+        ws.append(row)
+    return ws
+
+
 def run_batch(excel_path: str, lookups: Optional[dict] = None) -> tuple:
+    """Back-compat wrapper: (summary_df, detail_df) without the entries."""
+    summary_df, detail_df, _entries = run_batch_entries(excel_path, lookups)
+    return summary_df, detail_df
+
+
+def run_batch_entries(excel_path: str, lookups: Optional[dict] = None) -> tuple:
     # Lookups come from the bundled engine data (lookups.json), not the uploaded
     # file — the Pension Authority dumps contain only raw rows, no lookup tables.
     if lookups is None:
         lookups = get_lookups()
     workers_raw = load_golmi(excel_path)
     summary_rows, detail_rows = [], []
-    for entry in run_engine_full(workers_raw, lookups):
+    entries = run_engine_full(workers_raw, lookups)
+    for entry in entries:
         result, flags = entry["result"], entry["comp_flags"]
         summary_rows.append({
             "worker_id": result.worker_id, "ministry_code": result.ministry_code,
@@ -569,7 +725,7 @@ def run_batch(excel_path: str, lookups: Optional[dict] = None) -> tuple:
                 "amount": chk["expected"], "expected": chk["slip"],
                 "diff": chk["diff"], "match": False,
             })
-    return pd.DataFrame(summary_rows), pd.DataFrame(detail_rows)
+    return pd.DataFrame(summary_rows), pd.DataFrame(detail_rows), entries
 
 
 # ---------------------------------------------------------------------------
@@ -732,6 +888,7 @@ def build_highlighted_export(excel_path: str, lookups: Optional[dict] = None) ->
             n_flagged += 1
         ws.append(out)
 
+    append_report_sheet(wb, entries)
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
@@ -1065,9 +1222,9 @@ async def export_highlighted(file: UploadFile = File(...)):
 
 @app.post("/api/batch")
 async def batch_calculate(file: UploadFile = File(...)):
-    """Upload a גולמי Excel file → download an .xlsx with two tabs: "תקין" (the
-    valid slips) and "לבדיקה" (everything else — שגוי / ללא בסיס / רטרו, told
-    apart by the status column)."""
+    """Upload a גולמי Excel file → download an .xlsx with three tabs: "תקין",
+    "לבדיקה" (שגוי / ללא בסיס / רטרו), and "דוח שגויים" — an itemized error
+    diagnosis per non-valid slip (what exactly is wrong, where, and by how much)."""
     if not file.filename.endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="File must be .xlsx")
     content = await file.read()
@@ -1075,7 +1232,7 @@ async def batch_calculate(file: UploadFile = File(...)):
         tmp.write(content); tmp_path = tmp.name
     try:
         t0 = time.time()
-        summary_df, _ = run_batch(tmp_path)
+        summary_df, _, entries = run_batch_entries(tmp_path)
         elapsed = round(time.time() - t0, 1)
         valid_df = summary_df[summary_df["status"] == STATUS_VALID]
         review_df = summary_df[summary_df["status"] != STATUS_VALID]
@@ -1087,6 +1244,7 @@ async def batch_calculate(file: UploadFile = File(...)):
             clean = df.where(pd.notnull(df), None)
             for row in clean.itertuples(index=False):
                 ws.append([v.item() if hasattr(v, "item") else v for v in row])
+        append_report_sheet(wb, entries)
         out = io.BytesIO(); wb.save(out); out.seek(0)
         total = len(summary_df); valid = len(valid_df)
         return StreamingResponse(
