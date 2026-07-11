@@ -72,6 +72,62 @@
     return lo[1] + (hi[1] - lo[1]) * (vatek - lo[0]) / (hi[0] - lo[0]);
   }
 
+  // --- Component rules (החוקה) -----------------------------------------------
+  // component_rules.json (served at /api/rules): percentage components carry the
+  // exact base composition + every official rate; manual (ידני) components are
+  // accepted as reported. Trust is self-calibrating per file — see trustedRuleCodes.
+  const TRUST_MIN_MATCH = 0.97, TRUST_MIN_N = 20;
+
+  function prepRules(raw) {
+    const rules = {};
+    for (const k in raw) rules[parseInt(k, 10)] = raw[k];
+    return rules;
+  }
+
+  function checkWorkerComponents(rows, jobPct, rules) {
+    const amounts = new Map();
+    for (const r of rows) {
+      const code = Number(r.comp_code);
+      if (!Number.isNaN(code)) amounts.set(code, (amounts.get(code) || 0) + (r.amount || 0));
+    }
+    const checks = {};
+    for (const k in rules) {
+      const rule = rules[k];
+      if (rule.type !== 'percent') continue;
+      let slip = 0;
+      for (const c of rule.codes) slip += (amounts.get(c) || 0);
+      if (Math.abs(slip) < 0.01) continue;
+      let base = 0;
+      for (const c of rule.base_codes) base += (amounts.get(c) || 0);
+      base += (rule.base_const || 0) * (jobPct || 1.0);
+      if (base <= 0) continue;
+      let best = rule.rates[0];
+      for (const r of rule.rates) if (Math.abs(base * r - slip) < Math.abs(base * best - slip)) best = r;
+      const expected = round2(base * best);
+      checks[k] = {
+        slip: round2(slip), expected, diff: round2(expected - slip),
+        ok: Math.abs(base * best - slip) <= MATCH_THRESHOLD, name: rule.name,
+      };
+    }
+    return checks;
+  }
+
+  function trustedRuleCodes(allChecks) {
+    const per = new Map();
+    for (const checks of allChecks) {
+      for (const code in checks) {
+        if (!per.has(code)) per.set(code, [0, 0]);
+        const p = per.get(code);
+        p[0]++; if (checks[code].ok) p[1]++;
+      }
+    }
+    const trusted = new Set();
+    for (const [code, [n, ok]] of per) {
+      if (n >= TRUST_MIN_N && ok / n >= TRUST_MIN_MATCH) trusted.add(code);
+    }
+    return trusted;
+  }
+
   function baseWithinTolerance(lk, gradeBase, vatek, track, jobPct, slipBase) {
     if (gradeBase === null) return null;
     track = parseInt(track, 10) || DEFAULT_TRACK;
@@ -204,9 +260,31 @@
     };
   }
 
-  function runEngine(lk, workers) {
+  function runEngine(lk, workers, rules) {
     const results = [];
-    for (const [wid, rows] of workers) results.push(calculate(lk, rows, wid));
+    const allChecks = [];
+    // Pass A — base validation + חוקה component checks per worker.
+    for (const [wid, rows] of workers) {
+      const r = calculate(lk, rows, wid);
+      r.comp_flags = {};
+      const active = r.status === STATUS.VALID || r.status === STATUS.INVALID;
+      const checks = (rules && active) ? checkWorkerComponents(rows, r.job_pct, rules) : {};
+      allChecks.push(checks);
+      results.push(r);
+    }
+    if (!rules) return results;
+    // Pass B — self-calibrate rule trust on this file, then attach flags.
+    const trusted = trustedRuleCodes(allChecks);
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i], checks = allChecks[i];
+      for (const code in checks) {
+        if (trusted.has(code) && !checks[code].ok) r.comp_flags[code] = checks[code];
+      }
+      const flagged = Object.keys(r.comp_flags);
+      if (flagged.length) {
+        if (r.status === STATUS.VALID) { r.status = STATUS.INVALID; r.total_match = false; }
+      }
+    }
     return results;
   }
 
@@ -235,16 +313,26 @@
       .map((o) => ({ ministry_name: o.ministry_name, workers: o.workers, matched: o.matched,
                      accuracy_pct: round(o.matched / o.workers * 100, 2) }))
       .sort((a, b) => b.workers - a.workers).slice(0, 20);
+    const compDiff = (r) => {
+      let d = 0;
+      for (const k in (r.comp_flags || {})) d += r.comp_flags[k].diff;
+      return d;
+    };
+    const fullDiff = (r) => r.total_diff + compDiff(r);
     const inv = active.filter((r) => r.status === STATUS.INVALID)
-      .sort((a, b) => Math.abs(b.total_diff) - Math.abs(a.total_diff)).slice(0, 300);
+      .sort((a, b) => Math.abs(fullDiff(b)) - Math.abs(fullDiff(a))).slice(0, 300);
     const mismatches = inv.map((r) => ({
       worker_id: r.worker_id, ministry_name: r.ministry_name, darga_label: r.darga_label,
       vatek: r.vatek, job_pct: r.job_pct, grade_base: r.grade_base, vatek_multiplier: r.vatek_mult,
-      total_calculated: r.total, total_expected: r.expected_total, total_diff: r.total_diff,
+      total_calculated: round2(r.total + compDiff(r)), total_expected: r.expected_total,
+      total_diff: round2(fullDiff(r)),
       components: r.components.filter((c) => c.calculated).map((c) => ({
         code: c.code, name: c.name, slip: round2(c.expected || 0),
         computed: round2(c.amount || 0), diff: round2(c.diff || 0),
-      })),
+      })).concat(Object.keys(r.comp_flags || {}).map((k) => ({
+        code: parseInt(k, 10), name: r.comp_flags[k].name, slip: r.comp_flags[k].slip,
+        computed: r.comp_flags[k].expected, diff: r.comp_flags[k].diff,
+      }))),
     }));
     return {
       total_workers: total, matched: valid, unmatched: invalid, no_base, multi_period: multi,
@@ -256,12 +344,16 @@
 
   const BATCH_COLUMNS = ['worker_id', 'ministry_code', 'ministry_name', 'droog', 'kod_darga',
     'darga_label', 'vatek', 'job_pct', 'grade_base', 'vatek_mult', 'total_calculated',
-    'total_expected', 'total_diff', 'total_match', 'status', 'n_components', 'errors'];
+    'total_expected', 'total_diff', 'total_match', 'status', 'flagged_components',
+    'n_components', 'errors'];
 
   function batchRow(r) {
+    const flagged = Object.keys(r.comp_flags || {}).sort()
+      .map((k) => `${k} (${r.comp_flags[k].name}): ${r.comp_flags[k].slip} במקום ${r.comp_flags[k].expected}`)
+      .join('; ');
     return [r.worker_id, r.ministry_code, r.ministry_name, r.droog, r.kod_darga, r.darga_label,
       r.vatek, r.job_pct, r.grade_base, r.vatek_mult, r.total, r.expected_total, r.total_diff,
-      r.total_match, r.status, r.components.length, ''];
+      r.total_match, r.status, flagged, r.components.length, ''];
   }
 
   function batchCSV(results) {
@@ -298,9 +390,21 @@
           }
         }
       }
+      // חוקה component flags: expected per the rulebook vs the slip amount.
+      let compDiffTotal = 0;
+      const flags = r.comp_flags || {};
+      for (const k in flags) {
+        const code = parseInt(k, 10), chk = flags[k];
+        compDiffTotal += chk.diff;
+        if (!invalidCodes.has(code)) {
+          invalidCodes.set(code, { computed: chk.expected, slip: chk.slip,
+                                   diff: chk.slip - chk.expected, rulebook: true });
+        }
+      }
       rows.push({
         meta: [r.worker_id, r.ministry_code, r.ministry_name, r.job_pct, r.kod_darga, r.darga_label, r.vatek],
-        slipByCode, slipTotal: r.expected_total, correctedTotal: r.total,
+        slipByCode, slipTotal: r.expected_total,
+        correctedTotal: round2(r.total + compDiffTotal),
         invalidCodes, totalInvalid: r.status === STATUS.INVALID,
       });
     }
@@ -310,7 +414,8 @@
 
   const api = {
     MATCH_THRESHOLD, STATUS, round2,
-    prepLookups, getGradeBase, getVatekMultiplier, baseWithinTolerance,
+    prepLookups, prepRules, getGradeBase, getVatekMultiplier, baseWithinTolerance,
+    checkWorkerComponents, trustedRuleCodes,
     classifyHeader, loadGolmi, calculate, runEngine,
     accuracyReport, batchCSV, BATCH_COLUMNS, batchRow, buildPivot,
   };

@@ -537,6 +537,13 @@ code{font-family:var(--mono);background:var(--muted-bg);padding:1px 6px;border-r
             <div class="st-card info"><span class="st-dot"></span><h4>רטרו / רב-תקופתי</h4><p>יותר מתקופת שכר אחת בתלוש.</p></div>
           </div>
 
+          <h3 class="logic-h">אימות תוספות לפי החוקה (Progim)</h3>
+          <p class="muted-p">מעבר לבסיס, המנוע מאמת גם <strong>רכיבי תוספות אחוזיים</strong> לפי החוקה
+             (למשל תוספת 3.6%, הסכמי 2009/2011/2016): <code>צפוי = אחוז רשמי × סכום סמלי הבסיס שבתלוש</code>,
+             כולל מדרגות היסטוריות של ההסכמים. רכיבים <strong>ידניים</strong> (4120, 4173, 4643, 4935 — 'ידני'
+             בחוקה) מדווחים ידנית ולכן מתקבלים כפי שהם. הסימון מכויל-עצמית: כלל מסמן רק כשהוא מתאמת על
+             ‎97%+‎ מהעובדים בקובץ עצמו — תא צהוב הוא תמיד פער אמיתי.</p>
+
           <h3 class="logic-h">תוצאות אימות — קובץ 02.26 (מח"ר)</h3>
           <p class="muted-p">2,646 עובדים, כל הדרגות נפתרו. שיעור תקינות על התלושים הפעילים: <strong>93.3%</strong>.
              מדד התקינות מחושב על תלושים פעילים בלבד (תקין + שגוי), ואינו "נענש" על גמלאים או תלושים רב-תקופתיים.</p>
@@ -782,12 +789,13 @@ function renderCalcResult(d){
 // The גולמי file is parsed and validated entirely in the browser (SheetJS reads
 // it, engine.js runs the same logic as the server). Nothing is uploaded, so any
 // file size works — no serverless request-body limit, no timeout.
-let _engineLookups=null;
+let _engineLookups=null,_engineRules=null;
 async function ensureLookups(){
   if(_engineLookups) return _engineLookups;
-  const r=await fetch(API+'/api/lookups');
-  if(!r.ok) throw new Error('טעינת טבלאות השכר נכשלה (סטטוס '+r.status+')');
-  _engineLookups=SalaryEngine.prepLookups(await r.json());
+  const [rl,rr]=await Promise.all([fetch(API+'/api/lookups'),fetch(API+'/api/rules')]);
+  if(!rl.ok) throw new Error('טעינת טבלאות השכר נכשלה (סטטוס '+rl.status+')');
+  _engineLookups=SalaryEngine.prepLookups(await rl.json());
+  _engineRules=rr.ok?SalaryEngine.prepRules(await rr.json()):null; // rules are optional
   return _engineLookups;
 }
 async function readGolmiRows(file){
@@ -801,7 +809,7 @@ async function processFileLocally(file){
   const lk=await ensureLookups();
   const t0=performance.now();
   const rows=await readGolmiRows(file);
-  const results=SalaryEngine.runEngine(lk,SalaryEngine.loadGolmi(rows));
+  const results=SalaryEngine.runEngine(lk,SalaryEngine.loadGolmi(rows),_engineRules);
   return {results, elapsed:Math.round((performance.now()-t0)/100)/10};
 }
 function downloadBlob(blob,name){
@@ -949,7 +957,8 @@ async function buildHighlightedWorkbook(pivot){
     const row=ws.addRow(line);
     for(const [code,info] of w.invalidCodes){
       const cell=row.getCell(codeCol[code]); cell.fill=YELLOW;
-      cell.note=`ערך תקני מחושב: ${r2(info.computed)}\nבתלוש: ${r2(info.slip||0)}\nהפרש: ${r2(info.diff)}`;
+      const lbl=info.rulebook?'ערך תקני לפי החוקה':'ערך תקני מחושב';
+      cell.note=`${lbl}: ${r2(info.computed)}\nבתלוש: ${r2(info.slip||0)}\nהפרש: ${r2(info.diff)}`;
       nFlagged++;
     }
     if(w.totalInvalid){

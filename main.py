@@ -156,6 +156,70 @@ STATUS_MULTI = "multi_period"     # רטרו / רב-תקופתי — multiple ba
 
 BASE_CODES = (CODE_COMBINED_BASE, CODE_YESOD, CODE_VETEK_TOSEFET)
 
+# ---------------------------------------------------------------------------
+# Component rules (החוקה) — extracted from the Progim workbook's SACHAR block by
+# tools/extract_rules.py into component_rules.json:
+#   percent — expected = rate × Σ(slip amounts of the rule's base codes); the
+#             base composition comes from the actual חוקה formulas, and `rates`
+#             lists every official rate (historical phase-ins / track variants).
+#   manual  — components whose Netunei Gimlai column H says 'ידני': the value is
+#             manually reported (Progim reads it from column J), so the engine
+#             accepts the slip amount as-is and never flags it.
+#
+# Trust is SELF-CALIBRATING per file: a rule's mismatches are flagged only when
+# the rule demonstrably holds for the file's own population (≥97% of the
+# workers carrying the code match, with ≥20 carriers). A rule that fails
+# file-wide (an era/track variation the model doesn't capture) is suppressed —
+# a yellow cell must always mean a real, explainable gap.
+# ---------------------------------------------------------------------------
+TRUST_MIN_MATCH = 0.97
+TRUST_MIN_N = 20
+
+
+def check_worker_components(components, job_pct, rules) -> dict:
+    """Check each rule-covered percentage component on one slip.
+
+    components: iterable of (code, name, amount, pensionable) slip rows.
+    Returns {primary_code: {slip, expected, diff, ok, name}} for every percent
+    rule whose component appears on the slip and whose base is computable.
+    """
+    amounts = defaultdict(float)
+    for code, _name, amount, _pens in components:
+        if code is not None:
+            amounts[int(code)] += (amount or 0.0)
+    checks = {}
+    for code, rule in rules.items():
+        if rule["type"] != "percent":
+            continue
+        slip = sum(amounts.get(c, 0.0) for c in rule["codes"])
+        if abs(slip) < 0.01:
+            continue
+        base = sum(amounts.get(c, 0.0) for c in rule["base_codes"])
+        base += rule.get("base_const", 0.0) * (job_pct or 1.0)
+        if base <= 0:
+            continue
+        best_rate = min(rule["rates"], key=lambda r: abs(base * r - slip))
+        expected = round(base * best_rate, 2)
+        checks[int(code)] = {
+            "slip": round(slip, 2), "expected": expected,
+            "diff": round(expected - slip, 2),
+            "ok": abs(base * best_rate - slip) <= MATCH_THRESHOLD,
+            "name": rule["name"],
+        }
+    return checks
+
+
+def trusted_rule_codes(all_checks) -> set:
+    """Self-calibration: which rule codes hold on this file's own population."""
+    per_code = defaultdict(lambda: [0, 0])  # code -> [n, ok]
+    for checks in all_checks:
+        for code, chk in checks.items():
+            per_code[code][0] += 1
+            per_code[code][1] += chk["ok"]
+    return {code for code, (n, ok) in per_code.items()
+            if n >= TRUST_MIN_N and ok / n >= TRUST_MIN_MATCH}
+
+
 # The גולמי "ותק לחישוב שכר" column is a *rounded* seniority (to the nearest
 # quarter-year, the resolution of the pay table), while the payroll engine used
 # the exact, unrounded seniority. So a slip's base can legitimately differ from a
@@ -355,13 +419,17 @@ def load_golmi(excel_path: str) -> dict:
     wb.close()
     return dict(workers)
 
-def run_batch(excel_path: str, lookups: Optional[dict] = None) -> tuple:
-    # Lookups come from the bundled engine data (lookups.json), not the uploaded
-    # file — the Pension Authority dumps contain only raw rows, no lookup tables.
-    if lookups is None:
-        lookups = get_lookups()
-    workers_raw = load_golmi(excel_path)
-    summary_rows, detail_rows = [], []
+def run_engine_full(workers_raw: dict, lookups: dict) -> list:
+    """Run the full engine over grouped גולמי rows: base validation per worker,
+    then חוקה component checks with per-file self-calibration.
+
+    Returns a list of dicts: {result, comp_checks, comp_flags} where comp_flags
+    holds only the mismatches of rules that hold on this file's population —
+    a flagged component is a real, explainable gap.
+    """
+    rules = get_rules()
+    entries = []
+    # Pass A — base validation + component checks per worker.
     for worker_id, rows in workers_raw.items():
         first = rows[0]
         ministry_code, ministry_name, droog, job_pct, kod_darga, darga_label, vatek = first[:7]
@@ -377,6 +445,39 @@ def run_batch(excel_path: str, lookups: Optional[dict] = None) -> tuple:
             components=components,
         )
         result = calculate(worker, lookups)
+        # Component checks only make sense on active single-period slips.
+        checks = (check_worker_components(components, worker.job_pct or 1.0, rules)
+                  if result.status in (STATUS_VALID, STATUS_INVALID) else {})
+        entries.append({"result": result, "comp_checks": checks})
+    # Pass B — self-calibrate rule trust on this file, then attach flags.
+    trusted = trusted_rule_codes([e["comp_checks"] for e in entries])
+    for e in entries:
+        flags = {code: chk for code, chk in e["comp_checks"].items()
+                 if code in trusted and not chk["ok"]}
+        e["comp_flags"] = flags
+        result = e["result"]
+        if flags:
+            # A proven-wrong component makes the slip invalid even if its base
+            # matches; record what is wrong and by how much.
+            if result.status == STATUS_VALID:
+                result.status = STATUS_INVALID
+                result.total_match = False
+            for code, chk in sorted(flags.items()):
+                result.errors.append(
+                    f"רכיב {code} ({chk['name']}): בתלוש {chk['slip']}, "
+                    f"תקני {chk['expected']} (הפרש {chk['diff']})")
+    return entries
+
+
+def run_batch(excel_path: str, lookups: Optional[dict] = None) -> tuple:
+    # Lookups come from the bundled engine data (lookups.json), not the uploaded
+    # file — the Pension Authority dumps contain only raw rows, no lookup tables.
+    if lookups is None:
+        lookups = get_lookups()
+    workers_raw = load_golmi(excel_path)
+    summary_rows, detail_rows = [], []
+    for entry in run_engine_full(workers_raw, lookups):
+        result, flags = entry["result"], entry["comp_flags"]
         summary_rows.append({
             "worker_id": result.worker_id, "ministry_code": result.ministry_code,
             "ministry_name": result.ministry_name, "droog": result.droog,
@@ -386,6 +487,9 @@ def run_batch(excel_path: str, lookups: Optional[dict] = None) -> tuple:
             "total_calculated": result.total, "total_expected": result.expected_total,
             "total_diff": result.total_diff, "total_match": result.total_match,
             "status": result.status,
+            "flagged_components": "; ".join(
+                f"{code} ({chk['name']}): {chk['slip']} במקום {chk['expected']}"
+                for code, chk in sorted(flags.items())),
             "n_components": len(result.components), "errors": "; ".join(result.errors),
         })
         for comp in result.components:
@@ -395,6 +499,14 @@ def run_batch(excel_path: str, lookups: Optional[dict] = None) -> tuple:
                 "pensionable": comp.pensionable, "calculated": comp.calculated,
                 "amount": comp.amount, "expected": comp.expected, "diff": comp.diff,
                 "match": abs(comp.diff or 0) <= MATCH_THRESHOLD if comp.calculated else None,
+            })
+        for code, chk in sorted(flags.items()):
+            detail_rows.append({
+                "worker_id": result.worker_id, "ministry_code": result.ministry_code,
+                "comp_code": code, "comp_name": chk["name"],
+                "pensionable": None, "calculated": True,
+                "amount": chk["expected"], "expected": chk["slip"],
+                "diff": chk["diff"], "match": False,
             })
     return pd.DataFrame(summary_rows), pd.DataFrame(detail_rows)
 
@@ -417,7 +529,7 @@ def run_batch(excel_path: str, lookups: Optional[dict] = None) -> tuple:
 # multi-period slips are left untouched — the engine does not flag what it cannot
 # prove, so a yellow cell always means a real, explainable gap.
 # ---------------------------------------------------------------------------
-YELLOW_FILL = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+YELLOW_FILL = PatternFill(start_color="FFFFFF00", end_color="FFFFFF00", fill_type="solid")
 META_LABELS = ["תוויות שורה", "קוד משרד", "שם משרד", "חלקיות משרה",
                "קוד דרגה", "דרגה", "ותק"]
 
@@ -445,20 +557,12 @@ def build_highlighted_export(excel_path: str, lookups: Optional[dict] = None) ->
     code_names = {}        # pay code -> display name (first one seen)
     all_codes = set()      # every pay code that appears anywhere in the file
 
-    for worker_id, rows in workers_raw.items():
+    entries = run_engine_full(workers_raw, lookups)
+    for (worker_id, rows), entry in zip(workers_raw.items(), entries):
         first = rows[0]
         ministry_code, ministry_name, droog, job_pct, kod_darga, darga_label, vatek = first[:7]
         components = [(r[7], r[8], r[10], r[9]) for r in rows]   # code, name, amount, pensionable
-        worker = WorkerInput(
-            worker_id=worker_id, ministry_code=ministry_code or 0,
-            ministry_name=ministry_name or "", droog=droog or 1,
-            job_pct=job_pct or 1.0, pension_pct=0.0,
-            kod_darga=kod_darga or 0, darga_label=darga_label or "",
-            vatek_mandatory=0.0, vatek_regular=float(vatek or 0),
-            vatek_msc=0.0, vatek_calculated=float(vatek or 0),
-            calc_month=0, retro_month=0, retro_count=0, components=components,
-        )
-        result = calculate(worker, lookups)
+        result, comp_flags = entry["result"], entry["comp_flags"]
 
         # Pivot the slip: one summed amount per pay code (a code may repeat).
         slip_by_code = defaultdict(float)
@@ -470,20 +574,24 @@ def build_highlighted_export(excel_path: str, lookups: Optional[dict] = None) ->
             code_names.setdefault(code, name or str(code))
             all_codes.add(code)
 
-        # Which pay codes are provably wrong, and what each one should have been.
+        # Which pay codes are provably wrong, and what each one should have
+        # been: the recomputed base when it mismatches, plus every חוקה
+        # component whose (self-calibrated) rule fails on this slip.
         invalid_codes = {}
         if result.status == STATUS_INVALID:
             for comp in result.components:
                 if comp.calculated and comp.diff is not None and abs(comp.diff) > MATCH_THRESHOLD:
                     invalid_codes[comp.code] = comp  # comp.amount = correct, comp.expected = slip
+        comp_diff_total = sum(chk["diff"] for chk in comp_flags.values())
 
         per_worker.append({
             "meta": [worker_id, ministry_code, ministry_name, job_pct,
                      kod_darga, darga_label, vatek],
             "slip_by_code": slip_by_code,
             "slip_total": result.expected_total,
-            "corrected_total": result.total,
+            "corrected_total": round(result.total + comp_diff_total, 2),
             "invalid_codes": invalid_codes,
+            "comp_flags": comp_flags,
             "total_invalid": result.status == STATUS_INVALID,
         })
 
@@ -525,6 +633,7 @@ def build_highlighted_export(excel_path: str, lookups: Optional[dict] = None) ->
         line[total_col] = round(w["slip_total"], 2) if w["slip_total"] is not None else None
 
         out = list(line)
+        done_cols = set()
         for code, comp in w["invalid_codes"].items():
             ci = code_col[code]
             cell = WriteOnlyCell(ws, value=line[ci])
@@ -535,6 +644,21 @@ def build_highlighted_export(excel_path: str, lookups: Optional[dict] = None) ->
                 f"הפרש: {round((comp.expected or 0) - comp.amount, 2)}",
                 "מנוע השכר")
             out[ci] = cell
+            done_cols.add(ci)
+            n_flagged += 1
+        for code, chk in w["comp_flags"].items():
+            ci = code_col.get(code)
+            if ci is None or ci in done_cols:
+                continue
+            cell = WriteOnlyCell(ws, value=line[ci])
+            cell.fill = YELLOW_FILL
+            cell.comment = Comment(
+                f"ערך תקני לפי החוקה: {chk['expected']}\n"
+                f"בתלוש: {chk['slip']}\n"
+                f"הפרש: {chk['diff']}",
+                "מנוע השכר")
+            out[ci] = cell
+            done_cols.add(ci)
             n_flagged += 1
         if w["total_invalid"]:
             cell = WriteOnlyCell(ws, value=line[total_col])
@@ -565,12 +689,23 @@ app = FastAPI(title="Salary Engine API", version="0.2.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 LOOKUPS_FILE = Path(__file__).parent / "lookups.json"
+RULES_FILE = Path(__file__).parent / "component_rules.json"
 COMPONENTS_FILE = Path(__file__).parent / "components.json"
 MINISTRIES_FILE = Path(__file__).parent / "ministries.json"
 FRONTEND_FILE = Path(__file__).parent / "index.html"
 _lookups: Optional[dict] = None
+_rules: Optional[dict] = None
 _components: Optional[dict] = None
 _ministries: Optional[dict] = None
+
+def get_rules() -> dict:
+    """Component rules (החוקה) keyed by primary pay code (int)."""
+    global _rules
+    if _rules is None:
+        _rules = ({int(k): v for k, v in
+                   json.loads(RULES_FILE.read_text(encoding="utf-8")).items()}
+                  if RULES_FILE.exists() else {})
+    return _rules
 
 def get_components() -> dict:
     global _components
@@ -697,6 +832,14 @@ def api_lookups():
     whole validation engine client-side — large גולמי files are then processed
     locally and never uploaded, sidestepping serverless request-body limits."""
     return json.loads(LOOKUPS_FILE.read_text(encoding="utf-8"))
+
+@app.get("/api/rules")
+def api_rules():
+    """Component rules (החוקה) extracted from the Progim workbook — percentage
+    bases/rates per pay code plus the manual (ידני) codes. Used by the browser
+    engine for client-side component validation."""
+    return (json.loads(RULES_FILE.read_text(encoding="utf-8"))
+            if RULES_FILE.exists() else {})
 
 @app.get("/api/grades")
 def list_grades():
