@@ -176,6 +176,26 @@ def test_percent_rule_suppressed_when_rule_fails_file_wide():
     assert engine.trusted_rule_codes(all_checks) == set()
 
 
-def test_2024_agreement_accepts_the_2pct_phase():
+def test_official_phase_schedules_are_complete():
+    """The rulebook must accept every official cumulative phase of the
+    framework agreements, so a file from ANY month matches its era's rate."""
     rules = engine.get_rules()
-    assert 0.02 in rules[5533]["rates"]
+    assert {0.015, 0.03, 0.047, 0.05} <= set(rules[4934]["rates"])       # הסכם 2008/2009
+    assert {0.0225, 0.04, 0.0625, 0.0725} <= set(rules[4994]["rates"])   # הסכם 2011
+    assert {0.01, 0.03875} <= set(rules[5401]["rates"])                  # הסכם 2016
+    assert {0.02, 0.035, 0.0394, 0.05, 0.06} <= set(rules[5533]["rates"])  # הסכם 2024
+
+
+def test_component_matches_any_official_phase():
+    """A slip paying an earlier/later phase of an agreement must pass the rule
+    — e.g. the 2024 addition at the 12.2024 phase (2%) and at the 4.2026
+    phase (5%) are both official."""
+    rules = {5533: {"codes": [5533], "name": "תוספת אחוזית 2024", "type": "percent",
+                    "rates": [0.02, 0.035, 0.0394, 0.05, 0.06],
+                    "base_codes": [10002, 1, 2]}}
+    base_amt = 6000.0
+    for rate, ok in ((0.02, True), (0.05, True), (0.06, True), (0.0433, False)):
+        comps = [(10002, "שכר משולב", base_amt, "כן"),
+                 (5533, "אחוזית-2024", round(base_amt * rate, 2), "כן")]
+        checks = engine.check_worker_components(comps, 1.0, rules)
+        assert checks[5533]["ok"] is ok, (rate, checks[5533])
