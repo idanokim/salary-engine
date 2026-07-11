@@ -419,6 +419,64 @@ def load_golmi(excel_path: str) -> dict:
     wb.close()
     return dict(workers)
 
+# ---------------------------------------------------------------------------
+# Plus-grade resolution — some גולמי dumps (the older מנהלי layout) drop the '+'
+# from the דרגה label: a worker paid at grade '18+' is listed with דרגה '18',
+# while קוד דרגה still distinguishes the plus grade (e.g. 200 = '18', 202 =
+# '18+'). Left unresolved, every such worker looks ~2–7% off (the plus grades
+# are exactly base × the grade's plus factor) and is falsely flagged invalid.
+#
+# The resolution is SELF-CALIBRATING per file, mirroring the rule-trust design:
+# for each (קוד דרגה, label) population we reconstruct every active slip's base
+# from the plain label and from its '+' variant, let the slips vote, and remap
+# the code to the plus grade only when the vote is decisive (≥90% of deciding
+# slips, ≥5 of them). Files whose labels already carry the '+' (the Pension
+# Authority dumps) produce no votes for change and pass through untouched.
+# ---------------------------------------------------------------------------
+PLUS_MIN_VOTES = 5
+PLUS_MIN_SHARE = 0.90
+
+
+def resolve_plus_grades(workers_raw: dict, lookups: dict) -> dict:
+    """Detect קוד-דרגה groups whose slips were actually paid at the '+' grade.
+
+    Returns {(kod_darga, stated_label): resolved_label} for the groups where the
+    file's own slips prove the label lost its '+'.
+    """
+    votes = defaultdict(lambda: [0, 0])  # (kod, label) -> [plain_fits, plus_fits]
+    for _worker_id, rows in workers_raw.items():
+        first = rows[0]
+        _mc, _mn, droog, job_pct, kod_darga, darga_label, vatek = first[:7]
+        label = str(darga_label or "").strip()
+        if not label or label.endswith("+"):
+            continue
+        plus_base = get_grade_base(lookups, label + "+")
+        plain_base = get_grade_base(lookups, label)
+        if plus_base is None or plain_base is None:
+            continue
+        # Only active single-period slips can vote.
+        slip_base = sum((r[10] or 0.0) for r in rows if r[7] in BASE_CODES)
+        primary_count = max(sum(1 for r in rows if r[7] == CODE_YESOD),
+                            sum(1 for r in rows if r[7] == CODE_COMBINED_BASE))
+        if slip_base <= MATCH_THRESHOLD or primary_count > 1:
+            continue
+        track = int(droog or DEFAULT_TRACK)
+        v = float(vatek or 0)
+        pct = job_pct or 1.0
+        plain_ok = base_within_tolerance(plain_base, v, track, pct, slip_base, lookups)
+        plus_ok = base_within_tolerance(plus_base, v, track, pct, slip_base, lookups)
+        if plain_ok and not plus_ok:
+            votes[(kod_darga, label)][0] += 1
+        elif plus_ok and not plain_ok:
+            votes[(kod_darga, label)][1] += 1
+    remap = {}
+    for (kod, label), (plain_fits, plus_fits) in votes.items():
+        decided = plain_fits + plus_fits
+        if decided >= PLUS_MIN_VOTES and plus_fits / decided >= PLUS_MIN_SHARE:
+            remap[(kod, label)] = label + "+"
+    return remap
+
+
 def run_engine_full(workers_raw: dict, lookups: dict) -> list:
     """Run the full engine over grouped גולמי rows: base validation per worker,
     then חוקה component checks with per-file self-calibration.
@@ -429,10 +487,13 @@ def run_engine_full(workers_raw: dict, lookups: dict) -> list:
     """
     rules = get_rules()
     entries = []
+    # Pass A0 — resolve dropped-'+' grade labels from the file's own population.
+    plus_remap = resolve_plus_grades(workers_raw, lookups)
     # Pass A — base validation + component checks per worker.
     for worker_id, rows in workers_raw.items():
         first = rows[0]
         ministry_code, ministry_name, droog, job_pct, kod_darga, darga_label, vatek = first[:7]
+        darga_label = plus_remap.get((kod_darga, str(darga_label or "").strip()), darga_label)
         components = [(r[7], r[8], r[10], r[9]) for r in rows]
         worker = WorkerInput(
             worker_id=worker_id, ministry_code=ministry_code or 0,
