@@ -202,10 +202,60 @@
     return workers;
   }
 
-  function calculate(lk, rows, workerId) {
+  // --- Plus-grade resolution (port of resolve_plus_grades) -------------------
+  // Older מנהלי dumps drop the '+' from the דרגה label (a '18+' worker shows
+  // '18') while קוד דרגה still distinguishes the plus grade. Self-calibrating
+  // per file: each (kod_darga, label) population votes plain-vs-plus by which
+  // grade reconstructs its slips; a code is remapped only on a decisive vote.
+  const PLUS_MIN_VOTES = 5, PLUS_MIN_SHARE = 0.90;
+
+  function resolvePlusGrades(lk, workers) {
+    const votes = new Map(); // "kod|label" -> [plainFits, plusFits]
+    for (const [, rows] of workers) {
+      const first = rows[0];
+      const label = String(first.darga_label ?? '').trim();
+      if (!label || label.endsWith('+')) continue;
+      const plainBase = getGradeBase(lk, label);
+      const plusBase = getGradeBase(lk, label + '+');
+      if (plainBase === null || plusBase === null) continue;
+      // Only active single-period slips can vote.
+      let slipBase = 0, cYesod = 0, cComb = 0;
+      for (const r of rows) {
+        const code = Number(r.comp_code);
+        if (BASE_CODES.has(code)) slipBase += (r.amount || 0);
+        if (code === CODE_YESOD) cYesod++;
+        if (code === CODE_COMBINED_BASE) cComb++;
+      }
+      if (slipBase <= MATCH_THRESHOLD || Math.max(cYesod, cComb) > 1) continue;
+      const track = parseInt(first.droog, 10) || DEFAULT_TRACK;
+      const vatek = parseFloat(first.vatek) || 0;
+      const jobPct = (parseFloat(first.job_pct) || 0) || 1.0;
+      const plainOk = baseWithinTolerance(lk, plainBase, vatek, track, jobPct, slipBase);
+      const plusOk = baseWithinTolerance(lk, plusBase, vatek, track, jobPct, slipBase);
+      const key = `${first.kod_darga}|${label}`;
+      if (plainOk && !plusOk) {
+        if (!votes.has(key)) votes.set(key, [0, 0]);
+        votes.get(key)[0]++;
+      } else if (plusOk && !plainOk) {
+        if (!votes.has(key)) votes.set(key, [0, 0]);
+        votes.get(key)[1]++;
+      }
+    }
+    const remap = new Map();
+    for (const [key, [plainFits, plusFits]] of votes) {
+      const decided = plainFits + plusFits;
+      if (decided >= PLUS_MIN_VOTES && plusFits / decided >= PLUS_MIN_SHARE) {
+        remap.set(key, key.slice(key.indexOf('|') + 1) + '+');
+      }
+    }
+    return remap;
+  }
+
+  function calculate(lk, rows, workerId, dargaOverride) {
     const first = rows[0];
     const track = parseInt(first.droog, 10) || DEFAULT_TRACK;
-    const darga = first.darga_label;
+    const darga = (dargaOverride !== undefined && dargaOverride !== null)
+      ? dargaOverride : first.darga_label;
     const vatek = parseFloat(first.vatek) || 0;
     const jobPct = (parseFloat(first.job_pct) || 0) || 1.0;
     const gradeBase = getGradeBase(lk, darga);
@@ -263,9 +313,13 @@
   function runEngine(lk, workers, rules) {
     const results = [];
     const allChecks = [];
+    // Pass A0 — resolve dropped-'+' grade labels from the file's own population.
+    const plusRemap = resolvePlusGrades(lk, workers);
     // Pass A — base validation + חוקה component checks per worker.
     for (const [wid, rows] of workers) {
-      const r = calculate(lk, rows, wid);
+      const first = rows[0];
+      const key = `${first.kod_darga}|${String(first.darga_label ?? '').trim()}`;
+      const r = calculate(lk, rows, wid, plusRemap.get(key));
       r.comp_flags = {};
       const active = r.status === STATUS.VALID || r.status === STATUS.INVALID;
       const checks = (rules && active) ? checkWorkerComponents(rows, r.job_pct, rules) : {};
@@ -415,7 +469,7 @@
   const api = {
     MATCH_THRESHOLD, STATUS, round2,
     prepLookups, prepRules, getGradeBase, getVatekMultiplier, baseWithinTolerance,
-    checkWorkerComponents, trustedRuleCodes,
+    checkWorkerComponents, trustedRuleCodes, resolvePlusGrades,
     classifyHeader, loadGolmi, calculate, runEngine,
     accuracyReport, batchCSV, BATCH_COLUMNS, batchRow, buildPivot,
   };
