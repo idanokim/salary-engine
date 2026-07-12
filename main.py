@@ -61,6 +61,20 @@ def load_lookups(json_path: str) -> dict:
     }
 
 
+def normalize_grade_label(darga_label):
+    """Canonicalize a grade label to the '<number>+' form used by the tables.
+
+    Some dumps write intermediate grades with the '+' as a *prefix* ('+17')
+    rather than a suffix ('17+'); older exports also pad with spaces. Move a
+    leading '+' to the end so both spellings resolve to the same base."""
+    if darga_label is None:
+        return None
+    s = str(darga_label).strip()
+    if s.startswith("+") and s[1:].strip():
+        s = s[1:].strip() + "+"
+    return s
+
+
 def get_grade_base(lookups, darga_label):
     """Base salary (seniority 0) for a grade label, e.g. '18', '42+'.
 
@@ -69,10 +83,7 @@ def get_grade_base(lookups, darga_label):
     the prefix form to the suffix form before looking up."""
     if darga_label is None:
         return None
-    label = str(darga_label).strip()
-    if label.startswith("+") and len(label) > 1:
-        label = label[1:] + "+"
-    return lookups["label_to_base"].get(label)
+    return lookups["label_to_base"].get(normalize_grade_label(darga_label))
 
 
 def get_vatek_multiplier(lookups, vatek, track=DEFAULT_TRACK):
@@ -511,6 +522,7 @@ def run_engine_full(workers_raw: dict, lookups: dict) -> list:
     for worker_id, rows in workers_raw.items():
         first = rows[0]
         ministry_code, ministry_name, droog, job_pct, kod_darga, darga_label, vatek = first[:7]
+        darga_label = normalize_grade_label(darga_label) or darga_label
         darga_label = plus_remap.get((kod_darga, str(darga_label or "").strip()), darga_label)
         components = [(r[7], r[8], r[10], r[9]) for r in rows]
         worker = WorkerInput(

@@ -176,6 +176,29 @@ def test_percent_rule_suppressed_when_rule_fails_file_wide():
     assert engine.trusted_rule_codes(all_checks) == set()
 
 
+def test_grade_label_plus_prefix_normalizes():
+    """Some dumps write '+17' (prefix) instead of '17+' — both must resolve to
+    the same base."""
+    lk = lookups()
+    assert engine.normalize_grade_label("+17") == "17+"
+    assert engine.normalize_grade_label(" 18+ ") == "18+"
+    assert engine.normalize_grade_label("20") == "20"
+    assert engine.get_grade_base(lk, "+17") == engine.get_grade_base(lk, "17+")
+    assert engine.get_grade_base(lk, "+17") is not None
+
+
+def test_plus_prefix_slip_is_valid():
+    """A worker whose grade is written '+18' pays the 18+ base and validates."""
+    lk = lookups()
+    gb = engine.get_grade_base(lk, "18+")
+    m = engine.get_vatek_multiplier(lk, 10.0, 1)
+    rows = [(1, "משרד", 1, 1.0, 202, "+18", 10.0, engine.CODE_COMBINED_BASE,
+             "שכר משולב", "כן", round(gb * m, 2))]
+    entries = engine.run_engine_full({1: rows}, lk)
+    assert entries[0]["result"].status == "valid"
+    assert entries[0]["result"].darga_label == "18+"
+
+
 def test_official_phase_schedules_are_complete():
     """The rulebook must accept every official cumulative phase of the
     framework agreements, so a file from ANY month matches its era's rate."""
