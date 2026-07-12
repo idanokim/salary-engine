@@ -120,6 +120,22 @@ input:hover,select:hover{border-color:var(--muted-2)}
 input:focus,select:focus{outline:none;border-color:var(--secondary);box-shadow:0 0 0 3px var(--ring)}
 .helper{font-size:12px;color:var(--muted);margin-top:4px}
 
+/* ---- worker lookup from a month sheet ---- */
+.wl-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+@media(max-width:720px){.wl-grid{grid-template-columns:1fr}}
+.wl-upload{margin:0;min-height:150px}
+.wl-pick{display:flex;flex-direction:column;gap:12px;justify-content:center}
+.wl-meta{font-size:12.5px;color:var(--muted)}
+.wl-worker{display:flex;flex-wrap:wrap;gap:8px 16px;padding:12px 14px;background:var(--surface-2);
+  border:1px solid var(--border);border-radius:var(--r-sm);margin-bottom:14px}
+.wl-worker .wi{display:flex;flex-direction:column;gap:2px}
+.wl-worker .wi b{font-size:14px;color:var(--fg)}
+.wl-worker .wi span{font-size:11px;color:var(--muted)}
+.finding{display:flex;gap:8px;align-items:flex-start;font-size:13px;padding:8px 12px;border-radius:var(--r-sm);
+  background:var(--red-bg,#fef2f2);border:1px solid #fecaca;margin-bottom:6px}
+.finding.warn{background:#fffbeb;border-color:#fde68a}
+.finding .fc{font-weight:600;white-space:nowrap}
+.finding-h{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:16px 0 8px}
 .comp-row{display:grid;grid-template-columns:1fr 84px 110px 38px;gap:8px;margin-bottom:8px;align-items:center}
 .comp-row input{padding:8px 10px;font-size:13.5px}
 .rm-btn{appearance:none;border:1px solid var(--border-2);background:var(--surface);color:var(--muted);
@@ -325,6 +341,32 @@ code{font-family:var(--mono);background:var(--muted-bg);padding:1px 6px;border-r
 
   <!-- ============ TAB: single worker ============ -->
   <section class="pane active" id="pane-calc">
+    <!-- Lookup a worker from an uploaded month sheet -->
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-head"><h2>בדיקת עובד מתוך גיליון חודשי</h2><span class="hint">מציג את כל רכיבי השכר של העובד באותו תלוש</span></div>
+      <div class="card-body">
+        <div class="wl-grid">
+          <label class="upload wl-upload" id="wl-zone">
+            <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+            <h3>בחר גיליון גולמי של חודש</h3>
+            <p>הקובץ מנותח בדפדפן — לא נשלח לשרת</p>
+            <input type="file" accept=".xlsx" onchange="onWorkerFile(this)">
+          </label>
+          <div class="wl-pick">
+            <div class="field"><label for="wl-id">מספר עובד</label>
+              <input id="wl-id" type="text" list="wl-id-list" autocomplete="off" placeholder="בחר קובץ תחילה…" disabled onkeydown="if(event.key==='Enter'){event.preventDefault();showWorkerFromFile()}">
+              <datalist id="wl-id-list"></datalist></div>
+            <button type="button" class="btn" id="wl-btn" onclick="showWorkerFromFile()" disabled>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+              הצג תלוש
+            </button>
+            <div class="wl-meta" id="wl-file-meta"></div>
+          </div>
+        </div>
+        <div class="alert" id="wl-err" role="alert"></div>
+      </div>
+    </div>
+
     <div class="grid">
       <!-- input form -->
       <form class="card" onsubmit="event.preventDefault();runCalc()">
@@ -376,8 +418,9 @@ code{font-family:var(--mono);background:var(--muted-bg);padding:1px 6px;border-r
 
       <!-- result -->
       <div class="card" id="calc-result" style="display:none">
-        <div class="card-head"><h2>תוצאת חישוב</h2><span class="hint" id="r-comp-count"></span></div>
+        <div class="card-head"><h2 id="r-title">תוצאת חישוב</h2><span class="hint" id="r-comp-count"></span></div>
         <div class="card-body">
+          <div class="wl-worker" id="r-worker" style="display:none"></div>
           <div class="verdict" id="r-verdict">
             <div class="vicon" id="r-vicon"></div>
             <div><div class="vt" id="r-match"></div><div class="vs" id="r-verdict-sub"></div></div>
@@ -393,8 +436,9 @@ code{font-family:var(--mono);background:var(--muted-bg);padding:1px 6px;border-r
             <div class="stat"><div class="k">שכר יסוד (ותק 0)</div><div class="v sm"><span class="num" id="m-base"></span></div></div>
             <div class="stat"><div class="k">ותק</div><div class="v sm" id="m-vatek"></div></div>
           </div>
+          <div id="r-findings"></div>
           <table>
-            <thead><tr><th>רכיב</th><th>סוג</th><th style="text-align:left">סכום</th><th style="text-align:left">הפרש</th></tr></thead>
+            <thead><tr><th>רכיב</th><th>סוג</th><th style="text-align:left">בתלוש</th><th style="text-align:left">תקני</th><th style="text-align:left">הפרש</th></tr></thead>
             <tbody id="comp-tbody"></tbody>
           </table>
         </div>
@@ -790,24 +834,92 @@ function renderCalcResult(d){
 
   document.getElementById('m-grade').textContent=d.darga_label||'—';
   document.getElementById('m-base').textContent=d.grade_base!=null?'₪'+fmt(d.grade_base):'—';
-  document.getElementById('m-vatek').textContent=d.vatek_calculated!=null?d.vatek_calculated+' שנים':'—';
-  document.getElementById('m-mult').textContent=d.vatek_multiplier!=null?Number(d.vatek_multiplier).toFixed(6):'—';
+  document.getElementById('m-vatek').textContent=(d.vatek_calculated!=null?d.vatek_calculated:d.vatek)!=null?(d.vatek_calculated!=null?d.vatek_calculated:d.vatek)+' שנים':'—';
+  document.getElementById('m-mult').textContent=(d.vatek_multiplier!=null?d.vatek_multiplier:d.vatek_mult)!=null?Number(d.vatek_multiplier!=null?d.vatek_multiplier:d.vatek_mult).toFixed(6):'—';
 
+  // Worker identity strip (only for file-loaded slips).
+  const wEl=document.getElementById('r-worker');
+  if(d._worker){
+    const w=d._worker;
+    wEl.style.display='flex';
+    wEl.innerHTML=[['מספר עובד',w.id],['משרד / גוף',w.ministry||'—'],['מסלול',w.track||'—'],
+      ['חלקיות',w.job_pct!=null?w.job_pct:'—'],['חודש שכר',w.month||'—']]
+      .map(([k,v])=>`<div class="wi"><b>${v}</b><span>${k}</span></div>`).join('');
+    document.getElementById('r-title').textContent='תלוש עובד '+w.id;
+  } else { wEl.style.display='none'; document.getElementById('r-title').textContent='תוצאת חישוב'; }
+
+  // Diagnosis (findings) — same content as the דוח שגויים.
+  const fEl=document.getElementById('r-findings'); fEl.innerHTML='';
+  const findings=d.findings||[];
+  if(findings.length){
+    fEl.innerHTML='<div class="finding-h">אבחון</div>'+findings.map(f=>{
+      const warn=['ללא שכר בסיס פעיל','רטרו / רב-תקופתי','תלוש ריק'].includes(f.category);
+      const nums=(f.slip!=null&&f.expected!=null)?` · בתלוש ₪${fmt(f.slip)} · תקני ₪${fmt(f.expected)} · הפרש ${f.diff>=0?'+':''}${fmt(f.diff)}`:'';
+      return `<div class="finding ${warn?'warn':''}"><span class="fc">${f.category}</span><span>${f.note||''}${nums}</span></div>`;
+    }).join('');
+  }
+
+  // Per-component table: בתלוש vs תקני (computed base / rulebook) + gap.
+  const pm={}; if(d.comp_flags) for(const k in d.comp_flags) pm[+k]=d.comp_flags[k].expected;
   const tbody=document.getElementById('comp-tbody'); tbody.innerHTML='';
   d.components.forEach(c=>{
+    const slip=c.expected!=null?c.expected:c.amount;
+    const proper=c.calculated?c.amount:(pm[c.code]!=null?pm[c.code]:null);
+    const diff=proper!=null?proper-slip:null;
+    let diffHtml='<span class="c-muted">—</span>', properHtml='<span class="c-muted">—</span>';
+    if(proper!=null){
+      properHtml=`₪${fmt(proper)}`;
+      const cls=Math.abs(diff)<=1?'c-green':Math.abs(diff)<10?'c-amber':'c-red';
+      diffHtml=`<span class="${cls}">${diff>=0?'+':''}${fmt(diff)}</span>`;
+    }
+    const kind=c.calculated?'בסיס':(pm[c.code]!=null?'חוקה':'גולמי');
+    const kindCls=c.calculated?'b-calc':(pm[c.code]!=null?'b-calc':'b-raw');
     const tr=document.createElement('tr');
-    let diffHtml='<span class="c-muted">—</span>';
-    if(c.diff!=null){ const cls=Math.abs(c.diff)<=1?'c-green':Math.abs(c.diff)<10?'c-amber':'c-red';
-      diffHtml=`<span class="${cls}">${c.diff>=0?'+':''}${fmt(c.diff)}</span>`; }
     tr.innerHTML=`<td><div>${c.name||'—'}</div><div class="code-sub">${c.code}</div></td>
-      <td><span class="badge ${c.calculated?'b-calc':'b-raw'}">${c.calculated?'מחושב':'גולמי'}</span>
-        ${c.pensionable?'<span class="badge b-pension" style="margin-right:4px">פנסיוני</span>':''}</td>
-      <td class="amount">₪${fmt(c.amount)}</td><td class="amount">${diffHtml}</td>`;
+      <td><span class="badge ${kindCls}">${kind}</span>${c.pensionable?'<span class="badge b-pension" style="margin-right:4px">פנסיוני</span>':''}</td>
+      <td class="amount">₪${fmt(slip)}</td><td class="amount">${properHtml}</td><td class="amount">${diffHtml}</td>`;
     tbody.appendChild(tr);
   });
+  const slipTotal=d.expected_total!=null?d.expected_total:d.total;
   const tr=document.createElement('tr'); tr.className='total-row';
-  tr.innerHTML=`<td colspan="2">סה"כ</td><td class="amount">₪${fmt(d.total)}</td><td></td>`;
+  tr.innerHTML=`<td colspan="2">סה"כ</td><td class="amount">₪${fmt(slipTotal)}</td><td class="amount">₪${fmt(d.total)}</td><td></td>`;
   tbody.appendChild(tr);
+}
+
+// ---- Worker lookup from an uploaded month sheet -----------------------------
+let _wlById=null,_wlMonth=null;
+async function onWorkerFile(input){
+  const file=input.files[0]; if(!file) return;
+  showError('wl',''); const meta=document.getElementById('wl-file-meta');
+  meta.textContent='טוען…';
+  try{
+    const lk=await ensureLookups();
+    const rows=await readGolmiRows(file);
+    // Pay month: first Date value found in the sheet (the 'תאריך שכר' column).
+    _wlMonth=null;
+    for(const row of rows.slice(0,60)){ for(const v of (row||[])){ if(v instanceof Date){
+      _wlMonth=('0'+(v.getMonth()+1)).slice(-2)+'/'+v.getFullYear(); break; } } if(_wlMonth) break; }
+    const results=SalaryEngine.runEngine(lk,SalaryEngine.loadGolmi(rows),_engineRules);
+    _wlById=new Map(results.map(r=>[String(r.worker_id),r]));
+    const dl=document.getElementById('wl-id-list');
+    dl.innerHTML=results.slice(0,3000).map(r=>`<option value="${r.worker_id}">`).join('');
+    const inp=document.getElementById('wl-id'); inp.disabled=false; inp.placeholder='הקלד/בחר מספר עובד…';
+    document.getElementById('wl-btn').disabled=false;
+    const inv=results.filter(r=>r.status==='invalid').length;
+    meta.innerHTML=`נטענו <b>${results.length.toLocaleString()}</b> עובדים · ${inv.toLocaleString()} שגויים · ${file.name}`;
+  }catch(e){ meta.textContent=''; showError('wl',e.message||String(e)); }
+}
+function showWorkerFromFile(){
+  showError('wl','');
+  if(!_wlById){ showError('wl','יש לבחור קובץ תחילה.'); return; }
+  const id=String(document.getElementById('wl-id').value||'').trim();
+  const r=_wlById.get(id);
+  if(!r){ showError('wl',`עובד ${id} לא נמצא בקובץ.`); return; }
+  const TRACK={1:'מינהלי',2:'עובדי מנהל ושירותים',11:'מח"ר'};
+  const view=Object.assign({},r,{_worker:{id:r.worker_id,ministry:r.ministry_name,
+    track:TRACK[r.droog]||('דירוג '+r.droog),job_pct:r.job_pct,month:_wlMonth||null}});
+  renderCalcResult(view);
+  document.getElementById('calc-result').scrollIntoView({behavior:'smooth',block:'start'});
 }
 
 // ---- Client-side processing -------------------------------------------------
