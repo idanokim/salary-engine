@@ -146,7 +146,7 @@
   // Map a גולמי column header to a canonical field name (port of _classify_header).
   function classifyHeader(h) {
     h = String(h).trim();
-    if (h.includes('מסד') || h.includes('מסב') || (h.includes('מספר') && h.includes('עובד'))) return 'worker_id';
+    if (h.includes('מסד') || h.includes('מסב') || h.includes('מזהה') || (h.includes('מספר') && h.includes('עובד'))) return 'worker_id';
     if (h.includes('קוד משרד') || h.includes('קוד גוף') || (h.includes('קוד') && h.includes('משרד/גוף'))) return 'ministry_code';
     if (h.includes('שם משרד') || h.includes('שם גוף') || h === 'משרד/גוף' || h === 'משרד' || h === 'גוף') return 'ministry_name';
     if (h.includes('דרוג')) return 'droog';
