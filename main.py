@@ -62,10 +62,17 @@ def load_lookups(json_path: str) -> dict:
 
 
 def get_grade_base(lookups, darga_label):
-    """Base salary (seniority 0) for a grade label, e.g. '18', '42+'."""
+    """Base salary (seniority 0) for a grade label, e.g. '18', '42+'.
+
+    Some גולמי dumps write intermediate grades with a leading plus ('+19',
+    an RTL rendering artifact) while the pay table stores '19+' — normalize
+    the prefix form to the suffix form before looking up."""
     if darga_label is None:
         return None
-    return lookups["label_to_base"].get(str(darga_label).strip())
+    label = str(darga_label).strip()
+    if label.startswith("+") and len(label) > 1:
+        label = label[1:] + "+"
+    return lookups["label_to_base"].get(label)
 
 
 def get_vatek_multiplier(lookups, vatek, track=DEFAULT_TRACK):
@@ -209,15 +216,22 @@ def check_worker_components(components, job_pct, rules) -> dict:
     return checks
 
 
-def trusted_rule_codes(all_checks) -> set:
-    """Self-calibration: which rule codes hold on this file's own population."""
+def trusted_rule_codes(all_checks, rules=None) -> set:
+    """Self-calibration: which rule codes hold on this file's own population.
+
+    Rules marked "stable" in the חוקה (fixed rate that never phased, trivial
+    base — e.g. ענ"א 16.2%/8%) are trusted even below the per-file sample
+    threshold: with only a handful of carriers there is no population signal,
+    but the rule itself is era-proof."""
     per_code = defaultdict(lambda: [0, 0])  # code -> [n, ok]
     for checks in all_checks:
         for code, chk in checks.items():
             per_code[code][0] += 1
             per_code[code][1] += chk["ok"]
+    stable = {code for code, r in (rules or {}).items() if r.get("stable")}
     return {code for code, (n, ok) in per_code.items()
-            if n >= TRUST_MIN_N and ok / n >= TRUST_MIN_MATCH}
+            if (n >= TRUST_MIN_N and ok / n >= TRUST_MIN_MATCH)
+            or (code in stable and (n < TRUST_MIN_N or ok / n >= TRUST_MIN_MATCH))}
 
 
 # The גולמי "ותק לחישוב שכר" column is a *rounded* seniority (to the nearest
@@ -319,6 +333,10 @@ def calculate(worker: WorkerInput, lookups: dict) -> SalaryResult:
             grade_base, worker.vatek_calculated, track, job_pct, raw_base_sum, lookups)
         if base_ok is not None:
             total_match = base_ok
+        if grade_base is None or vatek_mult is None:
+            # The base could not be verified at all (unknown grade/track) — an
+            # unverifiable active slip is never תקין by default.
+            total_match = False
         status = STATUS_VALID if total_match else STATUS_INVALID
     # total_match only carries meaning for active single-period slips.
     if status in (STATUS_NO_BASE, STATUS_MULTI):
@@ -511,7 +529,7 @@ def run_engine_full(workers_raw: dict, lookups: dict) -> list:
                   if result.status in (STATUS_VALID, STATUS_INVALID) else {})
         entries.append({"result": result, "comp_checks": checks})
     # Pass B — self-calibrate rule trust on this file, then attach flags.
-    trusted = trusted_rule_codes([e["comp_checks"] for e in entries])
+    trusted = trusted_rule_codes([e["comp_checks"] for e in entries], rules)
     for e in entries:
         flags = {code: chk for code, chk in e["comp_checks"].items()
                  if code in trusted and not chk["ok"]}

@@ -82,6 +82,14 @@ ERA_BASE_EXTRA = {
 #   'tosafot'!BA2*(AA11+AC11+AD11+AE11+BI11+257.37)
 BASE_CONSTANTS = {920: 257.37}
 
+# Rules that are STABLE across eras: a single fixed rate that never phased and a
+# trivial base (שכר משולב only). These are trusted even when a file carries too
+# few holders for per-file calibration (n<20) — verified empirically: 4169 held
+# at 98.7–100% and 4932 at 100% on every file checked (2008, 2011, 2026), and
+# their misses are blatant single-worker anomalies (e.g. 18.5% or 40% instead
+# of the fixed 16.2%).
+STABLE_CODES = {4169, 4932}
+
 # The sample worker in the workbook has most eligibility switches off, so the
 # resolved rate in SACHAR row 7 is 0 for components he doesn't get. The current
 # rate still lives in the `tosafot` sheet's rate row — pull it from there.
@@ -182,6 +190,8 @@ def extract(xlsm_path: str) -> dict:
         }
         if primary in BASE_CONSTANTS:
             rule["base_const"] = BASE_CONSTANTS[primary]  # × job% at runtime
+        if primary in STABLE_CODES:
+            rule["stable"] = True
         rules[primary] = rule
 
     for code in MANUAL_CODES:
