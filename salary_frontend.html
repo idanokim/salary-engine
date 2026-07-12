@@ -136,6 +136,21 @@ input:focus,select:focus{outline:none;border-color:var(--secondary);box-shadow:0
 .finding.warn{background:#fffbeb;border-color:#fde68a}
 .finding .fc{font-weight:600;white-space:nowrap}
 .finding-h{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:16px 0 8px}
+/* ---- accuracy hero ring ---- */
+.acc-hero{display:flex;gap:24px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.ring-wrap{position:relative;width:144px;height:144px;flex:0 0 auto}
+.acc-ring{width:144px;height:144px;transform:rotate(-90deg)}
+.ring-bg{fill:none;stroke:var(--surface-2);stroke-width:12}
+.ring-fg{fill:none;stroke:var(--green);stroke-width:12;stroke-linecap:round;
+  stroke-dasharray:326.7;stroke-dashoffset:326.7;transition:stroke-dashoffset .9s cubic-bezier(.4,0,.2,1),stroke .3s}
+.ring-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.rc-pct{font-size:30px;font-weight:800;color:var(--fg);font-family:var(--mono);line-height:1}
+.rc-lbl{font-size:12px;color:var(--muted);margin-top:3px}
+.acc-legend{flex:1;min-width:230px;display:grid;grid-template-columns:1fr 1fr;gap:9px 16px}
+.leg{display:flex;align-items:center;gap:9px;font-size:13.5px;color:var(--fg)}
+.leg .dot{width:11px;height:11px;border-radius:3px;flex:0 0 auto}
+.leg b{margin-inline-start:auto;font-family:var(--mono);font-weight:700}
+.leg small{color:var(--muted);font-size:11.5px}
 .comp-row{display:grid;grid-template-columns:1fr 84px 110px 38px;gap:8px;margin-bottom:8px;align-items:center}
 .comp-row input{padding:8px 10px;font-size:13.5px}
 .rm-btn{appearance:none;border:1px solid var(--border-2);background:var(--surface);color:var(--muted);
@@ -488,22 +503,19 @@ code{font-family:var(--mono);background:var(--muted-bg);padding:1px 6px;border-r
       <div class="card" id="acc-result" style="display:none">
         <div class="card-head"><h2>סיכום בדיקה</h2><span class="hint" id="a-time"></span></div>
         <div class="card-body">
-          <div class="stats" style="grid-template-columns:repeat(2,1fr);margin-bottom:14px">
-            <div class="stat" style="background:var(--green-bg)"><div class="k">תלושים תקינים</div><div class="v" style="color:var(--green)"><span class="num" id="a-matched"></span></div></div>
-            <div class="stat" style="background:var(--red-bg)"><div class="k">תלושים שגויים</div><div class="v" style="color:var(--red)"><span class="num" id="a-unmatched"></span></div></div>
-          </div>
-          <div class="stats" style="grid-template-columns:repeat(2,1fr);margin-bottom:14px">
-            <div class="stat" style="background:var(--amber-bg)"><div class="k">ללא שכר בסיס פעיל</div><div class="v sm" style="color:var(--amber)"><span class="num" id="a-nobase"></span></div></div>
-            <div class="stat" style="background:var(--amber-bg)"><div class="k">רטרו / רב-תקופתי</div><div class="v sm" style="color:var(--amber)"><span class="num" id="a-multi"></span></div></div>
-          </div>
-          <div style="margin-bottom:18px">
-            <div style="display:flex;justify-content:space-between;font-size:13.5px;margin-bottom:2px">
-              <span style="color:var(--muted)">תקינות (מתוך התלושים הפעילים)</span>
-              <span class="num" id="a-pct" style="font-weight:700"></span>
+          <!-- hero: accuracy ring + status legend -->
+          <div class="acc-hero">
+            <div class="ring-wrap">
+              <svg viewBox="0 0 120 120" class="acc-ring" aria-hidden="true">
+                <circle class="ring-bg" cx="60" cy="60" r="52"/>
+                <circle class="ring-fg" id="a-ring" cx="60" cy="60" r="52"/>
+              </svg>
+              <div class="ring-center"><div class="rc-pct" id="a-pct">—</div><div class="rc-lbl">תקינות</div></div>
             </div>
-            <div class="bar-wrap"><div class="bar-fill" id="a-bar"></div></div>
-            <div class="helper" id="a-sub"></div>
+            <div class="acc-legend" id="a-legend"></div>
           </div>
+          <div class="bar-wrap" style="margin-bottom:6px"><div class="bar-fill" id="a-bar"></div></div>
+          <div class="helper" id="a-sub" style="margin-bottom:16px"></div>
           <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:18px">
             <div class="stat"><div class="k">סה"כ עובדים</div><div class="v sm"><span class="num" id="a-total"></span></div></div>
             <div class="stat"><div class="k">הפרש ממוצע</div><div class="v sm"><span class="num" id="a-avg"></span></div></div>
@@ -1200,11 +1212,18 @@ function renderAccuracy(d){
   document.getElementById('a-pct').style.color=color;
   document.getElementById('a-sub').textContent=`${d.matched.toLocaleString()} תקינים מתוך ${(d.active_total||d.matched+d.unmatched).toLocaleString()} תלושים פעילים`;
   const bar=document.getElementById('a-bar'); bar.style.width=pct+'%'; bar.style.background=color;
+  // Accuracy ring (r=52 → circumference 326.7).
+  const ring=document.getElementById('a-ring');
+  ring.style.stroke=color; ring.style.strokeDashoffset=(326.7*(1-pct/100)).toFixed(1);
+  // Status legend beside the ring.
+  const active=d.active_total||(d.matched+d.unmatched);
+  const leg=[['תקין','var(--green)',d.matched,`${(active?d.matched/active*100:0).toFixed(1)}% מהפעילים`],
+    ['שגוי — לבדיקה','var(--red)',d.unmatched,active?`${(d.unmatched/active*100).toFixed(1)}% מהפעילים`:''],
+    ['ללא בסיס פעיל','var(--amber)',d.no_base||0,'גמלאי / לא-פעיל'],
+    ['רטרו / רב-תקופתי','#94a3b8',d.multi_period||0,'רב-תקופתי']];
+  document.getElementById('a-legend').innerHTML=leg.map(([lbl,c,n,sub])=>
+    `<div class="leg"><span class="dot" style="background:${c}"></span><span>${lbl}<br><small>${sub}</small></span><b>${(n||0).toLocaleString()}</b></div>`).join('');
   document.getElementById('a-total').textContent=d.total_workers.toLocaleString();
-  document.getElementById('a-matched').textContent=d.matched.toLocaleString();
-  document.getElementById('a-unmatched').textContent=d.unmatched.toLocaleString();
-  document.getElementById('a-nobase').textContent=(d.no_base||0).toLocaleString();
-  document.getElementById('a-multi').textContent=(d.multi_period||0).toLocaleString();
   document.getElementById('a-avg').textContent='₪'+fmt(d.avg_diff);
   document.getElementById('a-max').textContent='₪'+fmt(d.max_diff);
   document.getElementById('a-time').textContent=d.elapsed_sec+' ש׳';
