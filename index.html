@@ -410,16 +410,34 @@ code{font-family:var(--mono);background:var(--muted-bg);padding:1px 6px;border-r
         <div class="card-body">
           <label class="upload" id="acc-zone">
             <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
-            <h3>בחר קובץ ‎.xlsx</h3>
-            <p>או גרור לכאן קובץ גולמי</p>
-            <input type="file" accept=".xlsx" onchange="runAccuracy(this)">
+            <h3>בחר קובץ ‎.xlsx‎ (או כמה)</h3>
+            <p>או גרור לכאן קובץ גולמי — אפשר לבחור כמה קבצים יחד</p>
+            <input type="file" accept=".xlsx" multiple onchange="runAccuracy(this)">
           </label>
           <div class="filename" id="acc-filename"></div>
           <div class="progress" id="acc-prog"><div class="fill" id="acc-bar"></div></div>
           <div class="alert" id="acc-err" role="alert"></div>
           <p class="helper" style="margin-top:14px">הקובץ מנותח מול מנוע השכר; כל עובד מסומן כ<strong>תלוש תקין</strong> (הפרש ≤ ₪1) או <strong>שגוי</strong>.
              העיבוד מתבצע ב<strong>דפדפן</strong> — הקובץ אינו נשלח לשרת, ואין מגבלת גודל.
-             לאחר הבדיקה ניתן להוריד מכאן גם את <strong>הגולמי המסומן</strong> וגם את <strong>יצוא התוצאות</strong>.</p>
+             לאחר הבדיקה ניתן להוריד מכאן גם את <strong>הגולמי המסומן</strong> וגם את <strong>יצוא התוצאות</strong>.
+             בחירת <strong>כמה קבצים יחד</strong> מפיקה <strong>קובץ אחוד</strong> אחד (סיכום פר-קובץ + שורה לכל עובד מכל הקבצים).</p>
+        </div>
+      </div>
+
+      <!-- Bulk (multi-file) result: shown when more than one file is uploaded -->
+      <div class="card" id="bulk-result" style="display:none">
+        <div class="card-head"><h2>בדיקה מרובת-קבצים</h2><span class="hint" id="bulk-time"></span></div>
+        <div class="card-body">
+          <button type="button" class="btn" id="dl-unified-btn" onclick="downloadUnified()" style="margin-bottom:14px">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+            הורד קובץ אחוד (‎.xlsx‎)
+          </button>
+          <div class="filename" id="bulk-dl-filename"></div>
+          <p class="helper" style="margin-bottom:14px">הקובץ האחוד כולל לשונית <strong>סיכום חודשי</strong> (שורה לכל קובץ) ולשונית <strong>פר עובד</strong> (כל העובדים מכל הקבצים, השגויים בצהוב).</p>
+          <table>
+            <thead><tr><th>קובץ / חודש</th><th>עובדים</th><th>תקין</th><th>שגוי</th><th>תקינות</th></tr></thead>
+            <tbody id="bulk-tbody"></tbody>
+          </table>
         </div>
       </div>
 
@@ -808,9 +826,19 @@ async function ensureLookups(){
 async function readGolmiRows(file){
   if(typeof XLSX==='undefined') throw new Error('ספריית קריאת האקסל לא נטענה — בדוק את חיבור האינטרנט.');
   const buf=await file.arrayBuffer();
-  const wb=XLSX.read(new Uint8Array(buf),{type:'array'});
+  const wb=XLSX.read(new Uint8Array(buf),{type:'array',cellDates:true});
   const sn=wb.SheetNames.indexOf('גולמי')>=0?'גולמי':wb.SheetNames[0];
   return XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:null});
+}
+// Best-effort pay-month label from the sheet: the first Date-valued cell in the
+// data rows (the 'תאריך שכר' column), formatted MM/YYYY; else the file name.
+function payMonthLabel(rows,fileName){
+  for(let i=0;i<Math.min(rows.length,12);i++){
+    for(const c of (rows[i]||[])){
+      if(c instanceof Date && !isNaN(c)) return String(c.getMonth()+1).padStart(2,'0')+'/'+c.getFullYear();
+    }
+  }
+  return (fileName||'').replace(/\.xlsx$/i,'');
 }
 async function processFileLocally(file){
   const lk=await ensureLookups();
@@ -830,7 +858,10 @@ function dateStamp(){ return new Date().toISOString().slice(0,10); } // YYYY-MM-
 let _lastResults=null;
 
 async function runAccuracy(input){
-  const file=input.files[0]; if(!file) return;
+  const files=Array.from(input.files||[]); if(!files.length) return;
+  if(files.length>1) return runBulk(files);
+  const file=files[0];
+  document.getElementById('bulk-result').style.display='none';
   const fn=document.getElementById('acc-filename'); fn.textContent=file.name; fn.style.display='block'; fn.style.color='';
   showError('acc',''); setProgress('acc',15);
   const dl=document.getElementById('dl-filename'); dl.textContent=''; dl.style.display='none';
@@ -842,6 +873,118 @@ async function runAccuracy(input){
     setProgress('acc',100);
   }catch(e){ showError('acc',e.message||String(e)); }
   finally{ setTimeout(()=>setProgress('acc',null),500); }
+}
+
+// ---- Bulk: several files → one unified workbook -----------------------------
+let _bulkData=null;   // {perFile:[{name,month,workers,valid,invalid,no_base,multi,acc}], perEmp:[...]}
+const BULK_STATUS_HE={valid:'תקין',invalid:'שגוי',no_base:'ללא שכר בסיס פעיל',multi_period:'רטרו / רב-תקופתי'};
+
+async function runBulk(files){
+  document.getElementById('acc-result').style.display='none';
+  const fn=document.getElementById('acc-filename');
+  fn.textContent=`${files.length} קבצים נבחרו`; fn.style.display='block'; fn.style.color='';
+  showError('acc',''); setProgress('acc',5);
+  const bd=document.getElementById('bulk-dl-filename'); bd.textContent=''; bd.style.display='none';
+  const t0=performance.now();
+  const perFile=[], perEmp=[];
+  try{
+    await ensureLookups();
+    for(let i=0;i<files.length;i++){
+      const f=files[i];
+      const rows=await readGolmiRows(f);
+      const month=payMonthLabel(rows,f.name);
+      const results=SalaryEngine.runEngine(_engineLookups,SalaryEngine.loadGolmi(rows),_engineRules);
+      let v=0,inv=0,nb=0,mp=0;
+      for(const r of results){
+        if(r.status==='valid')v++; else if(r.status==='invalid')inv++;
+        else if(r.status==='no_base')nb++; else if(r.status==='multi_period')mp++;
+        let baseSlip=0,baseCalc=0;
+        for(const c of r.components){
+          if(c.code===1||c.code===2||c.code===10002) baseSlip+=(c.expected||0);
+          if(c.calculated) baseCalc+=(c.amount||0);
+        }
+        const flags=Object.keys(r.comp_flags||{}).map(k=>`${k} (${r.comp_flags[k].name}): ${r.comp_flags[k].slip} במקום ${r.comp_flags[k].expected}`).join('; ');
+        perEmp.push([month,r.worker_id,r.ministry_name,r.darga_label,r.vatek,r.job_pct,
+          SalaryEngine.round2(baseSlip), baseCalc?SalaryEngine.round2(baseCalc):null,
+          baseCalc?SalaryEngine.round2(baseCalc-baseSlip):null,
+          r.expected_total, r.total, r.total_diff, BULK_STATUS_HE[r.status]||r.status, flags, r.status]);
+      }
+      const active=v+inv;
+      perFile.push({name:f.name.replace(/\.xlsx$/i,''), month, workers:results.length,
+        valid:v, invalid:inv, no_base:nb, multi:mp, acc:active?SalaryEngine.round2(v/active*100):0});
+      setProgress('acc',5+Math.round((i+1)/files.length*85));
+    }
+    _bulkData={perFile,perEmp};
+    renderBulk(perFile, Math.round((performance.now()-t0)/100)/10);
+    setProgress('acc',100);
+  }catch(e){ showError('acc',e.message||String(e)); }
+  finally{ setTimeout(()=>setProgress('acc',null),600); }
+}
+
+function renderBulk(perFile, elapsed){
+  document.getElementById('bulk-result').style.display='block';
+  document.getElementById('bulk-time').textContent=elapsed+' ש׳';
+  const tb=document.getElementById('bulk-tbody'); tb.innerHTML='';
+  const tot={workers:0,valid:0,invalid:0};
+  perFile.forEach(s=>{
+    tot.workers+=s.workers; tot.valid+=s.valid; tot.invalid+=s.invalid;
+    const col=s.acc>=90?'var(--green)':s.acc>=70?'var(--amber)':'var(--red)';
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${s.month}<div class="code-sub">${s.name}</div></td>
+      <td class="num">${s.workers.toLocaleString()}</td>
+      <td class="num" style="color:var(--green)">${s.valid.toLocaleString()}</td>
+      <td class="num" style="color:var(--red)">${s.invalid.toLocaleString()}</td>
+      <td class="num" style="color:${col};font-weight:600">${s.acc.toFixed(1)}%</td>`;
+    tb.appendChild(tr);
+  });
+  const active=tot.valid+tot.invalid;
+  const tr=document.createElement('tr'); tr.className='total-row';
+  tr.innerHTML=`<td>סה"כ (${perFile.length} קבצים)</td>
+    <td class="num">${tot.workers.toLocaleString()}</td>
+    <td class="num">${tot.valid.toLocaleString()}</td>
+    <td class="num">${tot.invalid.toLocaleString()}</td>
+    <td class="num">${active?(tot.valid/active*100).toFixed(1):0}%</td>`;
+  tb.appendChild(tr);
+}
+
+const UNIFIED_EMP_HEAD=['חודש שכר','מסד עובד','משרד','דרגה','ותק','חלקיות',
+  'בסיס בתלוש','בסיס מחושב','הפרש בסיס','סכום בתלוש','סכום מחושב','הפרש כולל','סטטוס','רכיבים חריגים'];
+
+async function downloadUnified(){
+  const btn=document.getElementById('dl-unified-btn');
+  if(!_bulkData){ showError('acc','יש לבחור קבצים תחילה.'); return; }
+  if(typeof ExcelJS==='undefined'){ showError('acc','ספריית כתיבת האקסל לא נטענה — בדוק את חיבור האינטרנט.'); return; }
+  showError('acc',''); btn.disabled=true;
+  try{
+    const wb=new ExcelJS.Workbook();
+    // Summary sheet
+    const ws=wb.addWorksheet('סיכום חודשי',{views:[{rightToLeft:true}]});
+    ws.addRow(['חודש שכר','קובץ','עובדים','תקין','שגוי','ללא בסיס פעיל','רטרו/רב-תקופתי','% תקינות']).font={bold:true};
+    const tot={workers:0,valid:0,invalid:0,no_base:0,multi:0};
+    for(const s of _bulkData.perFile){
+      ws.addRow([s.month,s.name,s.workers,s.valid,s.invalid,s.no_base,s.multi,s.acc]);
+      tot.workers+=s.workers;tot.valid+=s.valid;tot.invalid+=s.invalid;tot.no_base+=s.no_base;tot.multi+=s.multi;
+    }
+    const active=tot.valid+tot.invalid;
+    const trow=ws.addRow(['סה"כ','',tot.workers,tot.valid,tot.invalid,tot.no_base,tot.multi,active?SalaryEngine.round2(tot.valid/active*100):0]);
+    trow.font={bold:true};
+    ws.columns.forEach((c,i)=>c.width=i===1?24:(i===0?12:13));
+    // Per-employee sheet
+    const ws2=wb.addWorksheet('פר עובד',{views:[{rightToLeft:true,state:'frozen',ySplit:1}]});
+    ws2.addRow(UNIFIED_EMP_HEAD).font={bold:true};
+    const YELLOW={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFF2AB'}};
+    for(const row of _bulkData.perEmp){
+      const r=ws2.addRow(row.slice(0,14));       // last item is raw status (for coloring)
+      if(row[14]==='invalid') r.eachCell(c=>{c.fill=YELLOW;});
+    }
+    ws2.columns.forEach((c,i)=>c.width=(i===2||i===13)?22:12);
+    const buf=await wb.xlsx.writeBuffer();
+    downloadBlob(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),`בדיקת שכר מאוחדת ${dateStamp()}.xlsx`);
+    const el=document.getElementById('bulk-dl-filename');
+    el.textContent=`הקובץ האחוד הורד · ${_bulkData.perFile.length} קבצים · ${_bulkData.perEmp.length.toLocaleString()} רשומות-עובד`;
+    el.style.display='block'; el.style.color='var(--green)';
+  }catch(e){ showError('acc',e.message||String(e)); }
+  finally{ btn.disabled=false; }
 }
 
 function renderAccuracy(d){
@@ -1023,8 +1166,12 @@ document.querySelectorAll('.upload').forEach(z=>{
   z.addEventListener('dragover',e=>{e.preventDefault();z.classList.add('hover')});
   z.addEventListener('dragleave',()=>z.classList.remove('hover'));
   z.addEventListener('drop',e=>{e.preventDefault();z.classList.remove('hover');
-    const f=e.dataTransfer.files[0]; if(!f) return;
-    const inp=z.querySelector('input[type=file]'); const dt=new DataTransfer(); dt.items.add(f); inp.files=dt.files;
+    const files=e.dataTransfer.files; if(!files||!files.length) return;
+    const inp=z.querySelector('input[type=file]'); const dt=new DataTransfer();
+    // Multi-file only where the input allows it (the file-check upload).
+    const n=inp.multiple?files.length:1;
+    for(let i=0;i<n;i++) dt.items.add(files[i]);
+    inp.files=dt.files;
     inp.dispatchEvent(new Event('change'));});
 });
 
