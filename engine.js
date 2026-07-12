@@ -47,13 +47,18 @@
     return { labelToBase, vetek, trackMax, tracks };
   }
 
+  // Canonicalize a grade label to '<number>+' form. Some dumps write the '+'
+  // as a prefix ('+17') instead of a suffix ('17+'); move it to the end.
+  function normalizeGradeLabel(darga) {
+    if (darga === null || darga === undefined) return null;
+    let s = String(darga).trim();
+    if (s.startsWith('+') && s.slice(1).trim()) s = s.slice(1).trim() + '+';
+    return s;
+  }
+
   function getGradeBase(lk, darga) {
     if (darga === null || darga === undefined || darga === '') return null;
-    let label = String(darga).trim();
-    // Some dumps write intermediate grades as '+19' (RTL artifact) while the
-    // pay table stores '19+' — normalize the prefix form to the suffix form.
-    if (label.length > 1 && label.startsWith('+')) label = label.slice(1) + '+';
-    const v = lk.labelToBase[label];
+    const v = lk.labelToBase[normalizeGradeLabel(darga)];
     return v === undefined ? null : v;
   }
 
@@ -264,7 +269,7 @@
     const first = rows[0];
     const track = parseInt(first.droog, 10) || DEFAULT_TRACK;
     const darga = (dargaOverride !== undefined && dargaOverride !== null)
-      ? dargaOverride : first.darga_label;
+      ? dargaOverride : normalizeGradeLabel(first.darga_label);
     const vatek = parseFloat(first.vatek) || 0;
     const jobPct = (parseFloat(first.job_pct) || 0) || 1.0;
     const gradeBase = getGradeBase(lk, darga);
@@ -606,7 +611,7 @@
   const api = {
     MATCH_THRESHOLD, STATUS, round2,
     prepLookups, prepRules, getGradeBase, getVatekMultiplier, baseWithinTolerance,
-    checkWorkerComponents, trustedRuleCodes, resolvePlusGrades,
+    checkWorkerComponents, trustedRuleCodes, resolvePlusGrades, normalizeGradeLabel,
     diagnoseResult, reportRows, REPORT_HEADERS,
     classifyHeader, loadGolmi, calculate, runEngine,
     accuracyReport, batchCSV, BATCH_COLUMNS, batchRow, buildPivot,
