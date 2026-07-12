@@ -49,7 +49,11 @@
 
   function getGradeBase(lk, darga) {
     if (darga === null || darga === undefined || darga === '') return null;
-    const v = lk.labelToBase[String(darga).trim()];
+    let label = String(darga).trim();
+    // Some dumps write intermediate grades as '+19' (RTL artifact) while the
+    // pay table stores '19+' — normalize the prefix form to the suffix form.
+    if (label.length > 1 && label.startsWith('+')) label = label.slice(1) + '+';
+    const v = lk.labelToBase[label];
     return v === undefined ? null : v;
   }
 
@@ -112,7 +116,7 @@
     return checks;
   }
 
-  function trustedRuleCodes(allChecks) {
+  function trustedRuleCodes(allChecks, rules) {
     const per = new Map();
     for (const checks of allChecks) {
       for (const code in checks) {
@@ -121,9 +125,14 @@
         p[0]++; if (checks[code].ok) p[1]++;
       }
     }
+    // "stable" rules (fixed era-proof rate, trivial base — ענ"א 16.2%/8%) are
+    // trusted even below the per-file sample threshold.
+    const stable = new Set();
+    for (const k in (rules || {})) if (rules[k].stable) stable.add(String(k));
     const trusted = new Set();
     for (const [code, [n, ok]] of per) {
       if (n >= TRUST_MIN_N && ok / n >= TRUST_MIN_MATCH) trusted.add(code);
+      else if (stable.has(code) && (n < TRUST_MIN_N || ok / n >= TRUST_MIN_MATCH)) trusted.add(code);
     }
     return trusted;
   }
@@ -297,6 +306,8 @@
     if (status === null) {
       const ok = baseWithinTolerance(lk, gradeBase, vatek, track, jobPct, rawBaseSum);
       if (ok !== null) totalMatch = ok;
+      // An unverifiable active slip (unknown grade/track) is never תקין by default.
+      if (gradeBase === null || vatekMult === null) totalMatch = false;
       status = totalMatch ? STATUS.VALID : STATUS.INVALID;
     }
     if (status === STATUS.NO_BASE || status === STATUS.MULTI) totalMatch = null;
@@ -331,7 +342,7 @@
       return results;
     }
     // Pass B — self-calibrate rule trust on this file, then attach flags.
-    const trusted = trustedRuleCodes(allChecks);
+    const trusted = trustedRuleCodes(allChecks, rules);
     for (let i = 0; i < results.length; i++) {
       const r = results[i], checks = allChecks[i];
       for (const code in checks) {
