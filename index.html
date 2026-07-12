@@ -120,6 +120,37 @@ input:hover,select:hover{border-color:var(--muted-2)}
 input:focus,select:focus{outline:none;border-color:var(--secondary);box-shadow:0 0 0 3px var(--ring)}
 .helper{font-size:12px;color:var(--muted);margin-top:4px}
 
+/* ---- worker lookup from a month sheet ---- */
+.wl-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+@media(max-width:720px){.wl-grid{grid-template-columns:1fr}}
+.wl-upload{margin:0;min-height:150px}
+.wl-pick{display:flex;flex-direction:column;gap:12px;justify-content:center}
+.wl-meta{font-size:12.5px;color:var(--muted)}
+.wl-worker{display:flex;flex-wrap:wrap;gap:8px 16px;padding:12px 14px;background:var(--surface-2);
+  border:1px solid var(--border);border-radius:var(--r-sm);margin-bottom:14px}
+.wl-worker .wi{display:flex;flex-direction:column;gap:2px}
+.wl-worker .wi b{font-size:14px;color:var(--fg)}
+.wl-worker .wi span{font-size:11px;color:var(--muted)}
+.finding{display:flex;gap:8px;align-items:flex-start;font-size:13px;padding:8px 12px;border-radius:var(--r-sm);
+  background:var(--red-bg,#fef2f2);border:1px solid #fecaca;margin-bottom:6px}
+.finding.warn{background:#fffbeb;border-color:#fde68a}
+.finding .fc{font-weight:600;white-space:nowrap}
+.finding-h{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:16px 0 8px}
+/* ---- accuracy hero ring ---- */
+.acc-hero{display:flex;gap:24px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.ring-wrap{position:relative;width:144px;height:144px;flex:0 0 auto}
+.acc-ring{width:144px;height:144px;transform:rotate(-90deg)}
+.ring-bg{fill:none;stroke:var(--surface-2);stroke-width:12}
+.ring-fg{fill:none;stroke:var(--green);stroke-width:12;stroke-linecap:round;
+  stroke-dasharray:326.7;stroke-dashoffset:326.7;transition:stroke-dashoffset .9s cubic-bezier(.4,0,.2,1),stroke .3s}
+.ring-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.rc-pct{font-size:30px;font-weight:800;color:var(--fg);font-family:var(--mono);line-height:1}
+.rc-lbl{font-size:12px;color:var(--muted);margin-top:3px}
+.acc-legend{flex:1;min-width:230px;display:grid;grid-template-columns:1fr 1fr;gap:9px 16px}
+.leg{display:flex;align-items:center;gap:9px;font-size:13.5px;color:var(--fg)}
+.leg .dot{width:11px;height:11px;border-radius:3px;flex:0 0 auto}
+.leg b{margin-inline-start:auto;font-family:var(--mono);font-weight:700}
+.leg small{color:var(--muted);font-size:11.5px}
 .comp-row{display:grid;grid-template-columns:1fr 84px 110px 38px;gap:8px;margin-bottom:8px;align-items:center}
 .comp-row input{padding:8px 10px;font-size:13.5px}
 .rm-btn{appearance:none;border:1px solid var(--border-2);background:var(--surface);color:var(--muted);
@@ -325,6 +356,32 @@ code{font-family:var(--mono);background:var(--muted-bg);padding:1px 6px;border-r
 
   <!-- ============ TAB: single worker ============ -->
   <section class="pane active" id="pane-calc">
+    <!-- Lookup a worker from an uploaded month sheet -->
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-head"><h2>בדיקת עובד מתוך גיליון חודשי</h2><span class="hint">מציג את כל רכיבי השכר של העובד באותו תלוש</span></div>
+      <div class="card-body">
+        <div class="wl-grid">
+          <label class="upload wl-upload" id="wl-zone">
+            <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+            <h3>בחר גיליון גולמי של חודש</h3>
+            <p>הקובץ מנותח בדפדפן — לא נשלח לשרת</p>
+            <input type="file" accept=".xlsx" onchange="onWorkerFile(this)">
+          </label>
+          <div class="wl-pick">
+            <div class="field"><label for="wl-id">מספר עובד</label>
+              <input id="wl-id" type="text" list="wl-id-list" autocomplete="off" placeholder="בחר קובץ תחילה…" disabled onkeydown="if(event.key==='Enter'){event.preventDefault();showWorkerFromFile()}">
+              <datalist id="wl-id-list"></datalist></div>
+            <button type="button" class="btn" id="wl-btn" onclick="showWorkerFromFile()" disabled>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+              הצג תלוש
+            </button>
+            <div class="wl-meta" id="wl-file-meta"></div>
+          </div>
+        </div>
+        <div class="alert" id="wl-err" role="alert"></div>
+      </div>
+    </div>
+
     <div class="grid">
       <!-- input form -->
       <form class="card" onsubmit="event.preventDefault();runCalc()">
@@ -376,8 +433,9 @@ code{font-family:var(--mono);background:var(--muted-bg);padding:1px 6px;border-r
 
       <!-- result -->
       <div class="card" id="calc-result" style="display:none">
-        <div class="card-head"><h2>תוצאת חישוב</h2><span class="hint" id="r-comp-count"></span></div>
+        <div class="card-head"><h2 id="r-title">תוצאת חישוב</h2><span class="hint" id="r-comp-count"></span></div>
         <div class="card-body">
+          <div class="wl-worker" id="r-worker" style="display:none"></div>
           <div class="verdict" id="r-verdict">
             <div class="vicon" id="r-vicon"></div>
             <div><div class="vt" id="r-match"></div><div class="vs" id="r-verdict-sub"></div></div>
@@ -393,8 +451,9 @@ code{font-family:var(--mono);background:var(--muted-bg);padding:1px 6px;border-r
             <div class="stat"><div class="k">שכר יסוד (ותק 0)</div><div class="v sm"><span class="num" id="m-base"></span></div></div>
             <div class="stat"><div class="k">ותק</div><div class="v sm" id="m-vatek"></div></div>
           </div>
+          <div id="r-findings"></div>
           <table>
-            <thead><tr><th>רכיב</th><th>סוג</th><th style="text-align:left">סכום</th><th style="text-align:left">הפרש</th></tr></thead>
+            <thead><tr><th>רכיב</th><th>סוג</th><th style="text-align:left">בתלוש</th><th style="text-align:left">תקני</th><th style="text-align:left">הפרש</th></tr></thead>
             <tbody id="comp-tbody"></tbody>
           </table>
         </div>
@@ -444,22 +503,19 @@ code{font-family:var(--mono);background:var(--muted-bg);padding:1px 6px;border-r
       <div class="card" id="acc-result" style="display:none">
         <div class="card-head"><h2>סיכום בדיקה</h2><span class="hint" id="a-time"></span></div>
         <div class="card-body">
-          <div class="stats" style="grid-template-columns:repeat(2,1fr);margin-bottom:14px">
-            <div class="stat" style="background:var(--green-bg)"><div class="k">תלושים תקינים</div><div class="v" style="color:var(--green)"><span class="num" id="a-matched"></span></div></div>
-            <div class="stat" style="background:var(--red-bg)"><div class="k">תלושים שגויים</div><div class="v" style="color:var(--red)"><span class="num" id="a-unmatched"></span></div></div>
-          </div>
-          <div class="stats" style="grid-template-columns:repeat(2,1fr);margin-bottom:14px">
-            <div class="stat" style="background:var(--amber-bg)"><div class="k">ללא שכר בסיס פעיל</div><div class="v sm" style="color:var(--amber)"><span class="num" id="a-nobase"></span></div></div>
-            <div class="stat" style="background:var(--amber-bg)"><div class="k">רטרו / רב-תקופתי</div><div class="v sm" style="color:var(--amber)"><span class="num" id="a-multi"></span></div></div>
-          </div>
-          <div style="margin-bottom:18px">
-            <div style="display:flex;justify-content:space-between;font-size:13.5px;margin-bottom:2px">
-              <span style="color:var(--muted)">תקינות (מתוך התלושים הפעילים)</span>
-              <span class="num" id="a-pct" style="font-weight:700"></span>
+          <!-- hero: accuracy ring + status legend -->
+          <div class="acc-hero">
+            <div class="ring-wrap">
+              <svg viewBox="0 0 120 120" class="acc-ring" aria-hidden="true">
+                <circle class="ring-bg" cx="60" cy="60" r="52"/>
+                <circle class="ring-fg" id="a-ring" cx="60" cy="60" r="52"/>
+              </svg>
+              <div class="ring-center"><div class="rc-pct" id="a-pct">—</div><div class="rc-lbl">תקינות</div></div>
             </div>
-            <div class="bar-wrap"><div class="bar-fill" id="a-bar"></div></div>
-            <div class="helper" id="a-sub"></div>
+            <div class="acc-legend" id="a-legend"></div>
           </div>
+          <div class="bar-wrap" style="margin-bottom:6px"><div class="bar-fill" id="a-bar"></div></div>
+          <div class="helper" id="a-sub" style="margin-bottom:16px"></div>
           <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:18px">
             <div class="stat"><div class="k">סה"כ עובדים</div><div class="v sm"><span class="num" id="a-total"></span></div></div>
             <div class="stat"><div class="k">הפרש ממוצע</div><div class="v sm"><span class="num" id="a-avg"></span></div></div>
@@ -790,24 +846,92 @@ function renderCalcResult(d){
 
   document.getElementById('m-grade').textContent=d.darga_label||'—';
   document.getElementById('m-base').textContent=d.grade_base!=null?'₪'+fmt(d.grade_base):'—';
-  document.getElementById('m-vatek').textContent=d.vatek_calculated!=null?d.vatek_calculated+' שנים':'—';
-  document.getElementById('m-mult').textContent=d.vatek_multiplier!=null?Number(d.vatek_multiplier).toFixed(6):'—';
+  document.getElementById('m-vatek').textContent=(d.vatek_calculated!=null?d.vatek_calculated:d.vatek)!=null?(d.vatek_calculated!=null?d.vatek_calculated:d.vatek)+' שנים':'—';
+  document.getElementById('m-mult').textContent=(d.vatek_multiplier!=null?d.vatek_multiplier:d.vatek_mult)!=null?Number(d.vatek_multiplier!=null?d.vatek_multiplier:d.vatek_mult).toFixed(6):'—';
 
+  // Worker identity strip (only for file-loaded slips).
+  const wEl=document.getElementById('r-worker');
+  if(d._worker){
+    const w=d._worker;
+    wEl.style.display='flex';
+    wEl.innerHTML=[['מספר עובד',w.id],['משרד / גוף',w.ministry||'—'],['מסלול',w.track||'—'],
+      ['חלקיות',w.job_pct!=null?w.job_pct:'—'],['חודש שכר',w.month||'—']]
+      .map(([k,v])=>`<div class="wi"><b>${v}</b><span>${k}</span></div>`).join('');
+    document.getElementById('r-title').textContent='תלוש עובד '+w.id;
+  } else { wEl.style.display='none'; document.getElementById('r-title').textContent='תוצאת חישוב'; }
+
+  // Diagnosis (findings) — same content as the דוח שגויים.
+  const fEl=document.getElementById('r-findings'); fEl.innerHTML='';
+  const findings=d.findings||[];
+  if(findings.length){
+    fEl.innerHTML='<div class="finding-h">אבחון</div>'+findings.map(f=>{
+      const warn=['ללא שכר בסיס פעיל','רטרו / רב-תקופתי','תלוש ריק'].includes(f.category);
+      const nums=(f.slip!=null&&f.expected!=null)?` · בתלוש ₪${fmt(f.slip)} · תקני ₪${fmt(f.expected)} · הפרש ${f.diff>=0?'+':''}${fmt(f.diff)}`:'';
+      return `<div class="finding ${warn?'warn':''}"><span class="fc">${f.category}</span><span>${f.note||''}${nums}</span></div>`;
+    }).join('');
+  }
+
+  // Per-component table: בתלוש vs תקני (computed base / rulebook) + gap.
+  const pm={}; if(d.comp_flags) for(const k in d.comp_flags) pm[+k]=d.comp_flags[k].expected;
   const tbody=document.getElementById('comp-tbody'); tbody.innerHTML='';
   d.components.forEach(c=>{
+    const slip=c.expected!=null?c.expected:c.amount;
+    const proper=c.calculated?c.amount:(pm[c.code]!=null?pm[c.code]:null);
+    const diff=proper!=null?proper-slip:null;
+    let diffHtml='<span class="c-muted">—</span>', properHtml='<span class="c-muted">—</span>';
+    if(proper!=null){
+      properHtml=`₪${fmt(proper)}`;
+      const cls=Math.abs(diff)<=1?'c-green':Math.abs(diff)<10?'c-amber':'c-red';
+      diffHtml=`<span class="${cls}">${diff>=0?'+':''}${fmt(diff)}</span>`;
+    }
+    const kind=c.calculated?'בסיס':(pm[c.code]!=null?'חוקה':'גולמי');
+    const kindCls=c.calculated?'b-calc':(pm[c.code]!=null?'b-calc':'b-raw');
     const tr=document.createElement('tr');
-    let diffHtml='<span class="c-muted">—</span>';
-    if(c.diff!=null){ const cls=Math.abs(c.diff)<=1?'c-green':Math.abs(c.diff)<10?'c-amber':'c-red';
-      diffHtml=`<span class="${cls}">${c.diff>=0?'+':''}${fmt(c.diff)}</span>`; }
     tr.innerHTML=`<td><div>${c.name||'—'}</div><div class="code-sub">${c.code}</div></td>
-      <td><span class="badge ${c.calculated?'b-calc':'b-raw'}">${c.calculated?'מחושב':'גולמי'}</span>
-        ${c.pensionable?'<span class="badge b-pension" style="margin-right:4px">פנסיוני</span>':''}</td>
-      <td class="amount">₪${fmt(c.amount)}</td><td class="amount">${diffHtml}</td>`;
+      <td><span class="badge ${kindCls}">${kind}</span>${c.pensionable?'<span class="badge b-pension" style="margin-right:4px">פנסיוני</span>':''}</td>
+      <td class="amount">₪${fmt(slip)}</td><td class="amount">${properHtml}</td><td class="amount">${diffHtml}</td>`;
     tbody.appendChild(tr);
   });
+  const slipTotal=d.expected_total!=null?d.expected_total:d.total;
   const tr=document.createElement('tr'); tr.className='total-row';
-  tr.innerHTML=`<td colspan="2">סה"כ</td><td class="amount">₪${fmt(d.total)}</td><td></td>`;
+  tr.innerHTML=`<td colspan="2">סה"כ</td><td class="amount">₪${fmt(slipTotal)}</td><td class="amount">₪${fmt(d.total)}</td><td></td>`;
   tbody.appendChild(tr);
+}
+
+// ---- Worker lookup from an uploaded month sheet -----------------------------
+let _wlById=null,_wlMonth=null;
+async function onWorkerFile(input){
+  const file=input.files[0]; if(!file) return;
+  showError('wl',''); const meta=document.getElementById('wl-file-meta');
+  meta.textContent='טוען…';
+  try{
+    const lk=await ensureLookups();
+    const rows=await readGolmiRows(file);
+    // Pay month: first Date value found in the sheet (the 'תאריך שכר' column).
+    _wlMonth=null;
+    for(const row of rows.slice(0,60)){ for(const v of (row||[])){ if(v instanceof Date){
+      _wlMonth=('0'+(v.getMonth()+1)).slice(-2)+'/'+v.getFullYear(); break; } } if(_wlMonth) break; }
+    const results=SalaryEngine.runEngine(lk,SalaryEngine.loadGolmi(rows),_engineRules);
+    _wlById=new Map(results.map(r=>[String(r.worker_id),r]));
+    const dl=document.getElementById('wl-id-list');
+    dl.innerHTML=results.slice(0,3000).map(r=>`<option value="${r.worker_id}">`).join('');
+    const inp=document.getElementById('wl-id'); inp.disabled=false; inp.placeholder='הקלד/בחר מספר עובד…';
+    document.getElementById('wl-btn').disabled=false;
+    const inv=results.filter(r=>r.status==='invalid').length;
+    meta.innerHTML=`נטענו <b>${results.length.toLocaleString()}</b> עובדים · ${inv.toLocaleString()} שגויים · ${file.name}`;
+  }catch(e){ meta.textContent=''; showError('wl',e.message||String(e)); }
+}
+function showWorkerFromFile(){
+  showError('wl','');
+  if(!_wlById){ showError('wl','יש לבחור קובץ תחילה.'); return; }
+  const id=String(document.getElementById('wl-id').value||'').trim();
+  const r=_wlById.get(id);
+  if(!r){ showError('wl',`עובד ${id} לא נמצא בקובץ.`); return; }
+  const TRACK={1:'מינהלי',2:'עובדי מנהל ושירותים',11:'מח"ר'};
+  const view=Object.assign({},r,{_worker:{id:r.worker_id,ministry:r.ministry_name,
+    track:TRACK[r.droog]||('דירוג '+r.droog),job_pct:r.job_pct,month:_wlMonth||null}});
+  renderCalcResult(view);
+  document.getElementById('calc-result').scrollIntoView({behavior:'smooth',block:'start'});
 }
 
 // ---- Client-side processing -------------------------------------------------
@@ -1088,11 +1212,18 @@ function renderAccuracy(d){
   document.getElementById('a-pct').style.color=color;
   document.getElementById('a-sub').textContent=`${d.matched.toLocaleString()} תקינים מתוך ${(d.active_total||d.matched+d.unmatched).toLocaleString()} תלושים פעילים`;
   const bar=document.getElementById('a-bar'); bar.style.width=pct+'%'; bar.style.background=color;
+  // Accuracy ring (r=52 → circumference 326.7).
+  const ring=document.getElementById('a-ring');
+  ring.style.stroke=color; ring.style.strokeDashoffset=(326.7*(1-pct/100)).toFixed(1);
+  // Status legend beside the ring.
+  const active=d.active_total||(d.matched+d.unmatched);
+  const leg=[['תקין','var(--green)',d.matched,`${(active?d.matched/active*100:0).toFixed(1)}% מהפעילים`],
+    ['שגוי — לבדיקה','var(--red)',d.unmatched,active?`${(d.unmatched/active*100).toFixed(1)}% מהפעילים`:''],
+    ['ללא בסיס פעיל','var(--amber)',d.no_base||0,'גמלאי / לא-פעיל'],
+    ['רטרו / רב-תקופתי','#94a3b8',d.multi_period||0,'רב-תקופתי']];
+  document.getElementById('a-legend').innerHTML=leg.map(([lbl,c,n,sub])=>
+    `<div class="leg"><span class="dot" style="background:${c}"></span><span>${lbl}<br><small>${sub}</small></span><b>${(n||0).toLocaleString()}</b></div>`).join('');
   document.getElementById('a-total').textContent=d.total_workers.toLocaleString();
-  document.getElementById('a-matched').textContent=d.matched.toLocaleString();
-  document.getElementById('a-unmatched').textContent=d.unmatched.toLocaleString();
-  document.getElementById('a-nobase').textContent=(d.no_base||0).toLocaleString();
-  document.getElementById('a-multi').textContent=(d.multi_period||0).toLocaleString();
   document.getElementById('a-avg').textContent='₪'+fmt(d.avg_diff);
   document.getElementById('a-max').textContent='₪'+fmt(d.max_diff);
   document.getElementById('a-time').textContent=d.elapsed_sec+' ש׳';
@@ -1180,28 +1311,78 @@ async function withDlButton(btnId,fn){
   finally{ btn.disabled=false; }
 }
 
-// דוח שגויים — itemized findings per non-valid slip, appended to both exports.
+// דוח שגויים + dashboard for the two single-file downloads — reuses the shared
+// workbook styling infra (XL palette, fill(), styleHeaderRow, MONEY_FMT/INT_FMT).
+const BATCH_WIDTHS=[12,10,22,7,10,8,8,9,13,10,13,13,12,10,16,34,10,30];
+const BATCH_MONEY=[9,10,11,12,13]; // grade_base..total_diff in BATCH_COLUMNS
+function batchSheet(wb,title,rows){
+  const ws=wb.addWorksheet(title,{views:[{rightToLeft:true,state:'frozen',ySplit:1}]});
+  styleHeaderRow(ws,SalaryEngine.BATCH_COLUMNS,BATCH_WIDTHS);
+  for(const r of rows){
+    const row=ws.addRow(SalaryEngine.batchRow(r));
+    BATCH_MONEY.forEach(ci=>{ if(typeof row.getCell(ci).value==='number') row.getCell(ci).numFmt=MONEY_FMT; });
+    const st=row.getCell(15);
+    if(r.status==='valid') st.font={color:{argb:XL.GOODT}};
+    else if(r.status==='invalid'){ st.font={bold:true,color:{argb:XL.BADT}};
+      if(typeof row.getCell(13).value==='number') row.getCell(13).font={color:{argb:XL.BADT}}; }
+    else st.font={color:{argb:XL.WARNT}};
+  }
+  ws.autoFilter={from:{row:1,column:1},to:{row:Math.max(rows.length+1,1),column:SalaryEngine.BATCH_COLUMNS.length}};
+  return ws;
+}
+// Single-file dashboard — the front sheet of both single-file downloads.
+function addDashboardSheet(wb,results,title){
+  const ws=wb.addWorksheet('לוח בקרה',{views:[{rightToLeft:true,showGridLines:false}]});
+  const n={valid:0,invalid:0,no_base:0,multi_period:0}; for(const r of results) n[r.status]++;
+  const active=n.valid+n.invalid, acc=active?n.valid/active:0;
+  ws.mergeCells('A1:F1'); const t=ws.getCell('A1'); t.value=title; t.font={size:16,bold:true,color:{argb:XL.NAVY}};
+  ws.mergeCells('A2:F2'); const s=ws.getCell('A2');
+  s.value=`הופק ${new Date().toLocaleDateString('he-IL')} · תלוש תקין = הפרש עד ₪1 מהחישוב לפי טבלאות השכר`;
+  s.font={size:10,color:{argb:XL.MUTED}};
+  const kpis=[['סה"כ עובדים',results.length,null,INT_FMT],['תקינים',n.valid,XL.GOODT,INT_FMT],
+    ['שגויים — לבדיקה',n.invalid,XL.BADT,INT_FMT],['% תקינות (פעילים)',acc,acc>=0.99?XL.GOODT:XL.WARNT,'0.00%'],
+    ['ללא בסיס פעיל',n.no_base,XL.WARNT,INT_FMT],['רטרו / רב-תקופתי',n.multi_period,XL.WARNT,INT_FMT]];
+  kpis.forEach(([ti,v,color,fmt],i)=>{ const col=i+1;
+    const tc=ws.getRow(4).getCell(col); tc.value=ti; tc.font={size:10,color:{argb:XL.MUTED}};
+    tc.alignment={horizontal:'center',vertical:'bottom'}; tc.fill=fill(XL.TILE);
+    const vc=ws.getRow(5).getCell(col); vc.value=v; vc.numFmt=fmt;
+    vc.font={size:15,bold:true,color:{argb:color||'FF0B0B0B'}}; vc.alignment={horizontal:'center',vertical:'top'}; vc.fill=fill(XL.TILE);
+    ws.getColumn(col).width=17; });
+  ws.getRow(4).height=16; ws.getRow(5).height=24; ws.addRow([]);
+  styleHeaderRow(ws,['משרד / גוף','עובדים','תקין','שגוי','% תקינות'],[28,12,10,10,14]);
+  const byMin=new Map();
+  for(const r of results){ if(r.status!=='valid'&&r.status!=='invalid') continue;
+    const k=r.ministry_name||'—'; if(!byMin.has(k))byMin.set(k,{w:0,v:0}); const o=byMin.get(k); o.w++; if(r.status==='valid')o.v++; }
+  [...byMin.entries()].sort((a,b)=>b[1].w-a[1].w).slice(0,25).forEach(([name,o])=>{
+    const r=ws.addRow([name,o.w,o.v,o.w-o.v,o.w?o.v/o.w:0]);
+    [2,3,4].forEach(ci=>r.getCell(ci).numFmt=INT_FMT); r.getCell(5).numFmt='0.00%';
+    r.getCell(3).font={color:{argb:XL.GOODT}}; if(o.w-o.v) r.getCell(4).font={bold:true,color:{argb:XL.BADT}}; });
+  ws.views=[{rightToLeft:true,showGridLines:false}];
+}
+const REPORT_WIDTHS=[12,11,22,8,8,8,18,20,8,20,13,13,12,34];
 function addReportSheet(wb){
-  const ws=wb.addWorksheet('דוח שגויים',{views:[{rightToLeft:true}]});
-  ws.addRow(SalaryEngine.REPORT_HEADERS).font={bold:true};
+  const ws=wb.addWorksheet('דוח שגויים',{views:[{rightToLeft:true,state:'frozen',ySplit:1}]});
+  styleHeaderRow(ws,SalaryEngine.REPORT_HEADERS,REPORT_WIDTHS);
   const rows=SalaryEngine.reportRows(_lastResults);
-  for(const r of rows) ws.addRow(r);
+  for(const r of rows){ const row=ws.addRow(r);
+    [11,12,13].forEach(c=>{ if(typeof row.getCell(c).value==='number') row.getCell(c).numFmt=MONEY_FMT; });
+    if(typeof row.getCell(13).value==='number' && Math.abs(row.getCell(13).value)>1) row.getCell(13).font={color:{argb:XL.BADT},bold:true};
+  }
+  ws.autoFilter={from:{row:1,column:1},to:{row:Math.max(rows.length+1,1),column:SalaryEngine.REPORT_HEADERS.length}};
   return rows.length;
 }
 
 async function downloadBatch(){
   await withDlButton('dl-batch-btn',async()=>{
-    // Three sheets: 'תקין' (valid), 'לבדיקה' (everything else — the status
-    // column distinguishes שגוי / ללא בסיס / רטרו), and 'דוח שגויים' with the
-    // itemized diagnosis of every non-valid slip.
+    // Four sheets: 'לוח בקרה' (dashboard KPIs), 'תקין' (valid), 'לבדיקה'
+    // (everything else — status column distinguishes שגוי/ללא בסיס/רטרו), and
+    // 'דוח שגויים' with the itemized diagnosis of every non-valid slip.
     const valid=_lastResults.filter(r=>r.status==='valid');
     const review=_lastResults.filter(r=>r.status!=='valid');
     const wb=new ExcelJS.Workbook();
-    for(const [name,subset] of [['תקין',valid],['לבדיקה',review]]){
-      const ws=wb.addWorksheet(name,{views:[{rightToLeft:true}]});
-      ws.addRow(SalaryEngine.BATCH_COLUMNS).font={bold:true};
-      for(const r of subset) ws.addRow(SalaryEngine.batchRow(r));
-    }
+    addDashboardSheet(wb,_lastResults,'בדיקת התאמת תלושים — תוצאות');
+    batchSheet(wb,'תקין',valid);
+    batchSheet(wb,'לבדיקה',review);
     const nFindings=addReportSheet(wb);
     const buf=await wb.xlsx.writeBuffer();
     downloadBlob(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),`תוצאות בדיקת שכר - תקין ולבדיקה ${dateStamp()}.xlsx`);
@@ -1215,13 +1396,15 @@ const PIVOT_META=['תוויות שורה','קוד משרד','שם משרד','ח�
 async function buildHighlightedWorkbook(pivot){
   const r2=SalaryEngine.round2;
   const wb=new ExcelJS.Workbook();
+  addDashboardSheet(wb,_lastResults,'גולמי מסומן — סיכום');
   const ws=wb.addWorksheet('גולמי מעודכן',{views:[{rightToLeft:true}]});
   const nMeta=PIVOT_META.length, codes=pivot.codesSorted, totalCol=nMeta+codes.length+1;
   const codeCol={}; codes.forEach((c,i)=>codeCol[c]=nMeta+1+i);
   ws.addRow([]); ws.addRow([]);
   const row3=['סכום של סכום']; for(let i=1;i<nMeta;i++)row3.push(null);
-  codes.forEach(c=>row3.push(pivot.codeNames[c]||String(c))); row3.push(null); ws.addRow(row3);
-  ws.addRow([...PIVOT_META,...codes,'סכום כולל']).font={bold:true};
+  codes.forEach(c=>row3.push(pivot.codeNames[c]||String(c))); row3.push(null);
+  ws.addRow(row3).font={italic:true,color:{argb:XL.muted},size:10};
+  ws.addRow([...PIVOT_META,...codes,'סכום כולל']);
   const YELLOW={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFFF00'}};
   let nFlagged=0,nInvalid=0;
   for(const w of pivot.rows){
@@ -1242,6 +1425,12 @@ async function buildHighlightedWorkbook(pivot){
       nFlagged++; nInvalid++;
     }
   }
+  // Navy header on the code row (row 4); freeze the header block above the data.
+  const hdr=ws.getRow(4); hdr.height=22;
+  hdr.eachCell(c=>{ c.font={bold:true,color:{argb:XL.WHITE},size:10};
+    c.fill=fill(XL.NAVY); c.alignment={horizontal:'center',vertical:'middle',wrapText:true}; });
+  [14,10,20,9,9,8,8].forEach((w,i)=>{ ws.getColumn(i+1).width=w; });
+  ws.views=[{rightToLeft:true,state:'frozen',ySplit:4}];
   addReportSheet(wb);
   const buf=await wb.xlsx.writeBuffer();
   return {blob:new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),
