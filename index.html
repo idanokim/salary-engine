@@ -904,7 +904,8 @@ async function runBulk(files){
           if(c.calculated) baseCalc+=(c.amount||0);
         }
         const flags=Object.keys(r.comp_flags||{}).map(k=>`${k} (${r.comp_flags[k].name}): ${r.comp_flags[k].slip} במקום ${r.comp_flags[k].expected}`).join('; ');
-        perEmp.push([month,r.worker_id,r.ministry_name,r.darga_label,r.vatek,r.job_pct,
+        perEmp.push([month, f.name.replace(/\.xlsx$/i,''), r.worker_id, r.ministry_name,
+          r.darga_label, r.vatek, r.job_pct,
           SalaryEngine.round2(baseSlip), baseCalc?SalaryEngine.round2(baseCalc):null,
           baseCalc?SalaryEngine.round2(baseCalc-baseSlip):null,
           r.expected_total, r.total, r.total_diff, BULK_STATUS_HE[r.status]||r.status, flags, r.status]);
@@ -947,8 +948,42 @@ function renderBulk(perFile, elapsed){
   tb.appendChild(tr);
 }
 
-const UNIFIED_EMP_HEAD=['חודש שכר','מסד עובד','משרד','דרגה','ותק','חלקיות',
+const UNIFIED_EMP_HEAD=['חודש שכר','קובץ','מסד עובד','משרד','דרגה','ותק','חלקיות',
   'בסיס בתלוש','בסיס מחושב','הפרש בסיס','סכום בתלוש','סכום מחושב','הפרש כולל','סטטוס','רכיבים חריגים'];
+// Workbook palette (light surface; status colors always paired with a label)
+const XL={NAVY:'FF1E3A5F', WHITE:'FFFFFFFF', TILE:'FFF4F5F7', MUTED:'FF6B7280',
+  GOODT:'FF0B7A0B', GOODB:'FFE7F4E7', BADT:'FFA82626', BADB:'FFFBE9E9',
+  WARNT:'FF8A5A00', WARNB:'FFFEF3D8', BAR:'FF2A78D6', REDBAR:'FFD03B3B'};
+const MONEY_FMT='#,##0.00', INT_FMT='#,##0';
+const fill=(argb)=>({type:'pattern',pattern:'solid',fgColor:{argb}});
+
+function styleHeaderRow(ws,labels,widths){
+  const r=ws.addRow(labels);
+  r.height=24;
+  r.eachCell(c=>{c.font={bold:true,color:{argb:XL.WHITE},size:11};
+    c.fill=fill(XL.NAVY); c.alignment={horizontal:'center',vertical:'middle',wrapText:true};});
+  widths.forEach((w,i)=>{ws.getColumn(i+1).width=w;});
+  return r;
+}
+// One employee-rows sheet: navy header, freeze, autofilter, money formats,
+// status coloring. rows: arrays matching UNIFIED_EMP_HEAD + [15]=raw status.
+function empSheet(wb,title,rows){
+  const ws=wb.addWorksheet(title,{views:[{rightToLeft:true,state:'frozen',ySplit:1}]});
+  styleHeaderRow(ws,UNIFIED_EMP_HEAD,[11,18,12,22,8,8,8,13,13,12,13,13,12,16,30]);
+  const moneyCols=[8,9,10,11,12,13];
+  for(const row of rows){
+    const r=ws.addRow(row.slice(0,15));
+    moneyCols.forEach(ci=>{r.getCell(ci).numFmt=MONEY_FMT;});
+    r.getCell(3).numFmt=INT_FMT;
+    const st=row[15], stCell=r.getCell(14);
+    if(st==='invalid'){ stCell.fill=fill(XL.BADB); stCell.font={bold:true,color:{argb:XL.BADT}};
+      r.getCell(10).font={bold:true,color:{argb:XL.BADT}}; r.getCell(13).font={bold:true,color:{argb:XL.BADT}}; }
+    else if(st==='valid'){ stCell.font={color:{argb:XL.GOODT}}; }
+    else { stCell.font={color:{argb:XL.WARNT}}; }
+  }
+  ws.autoFilter={from:{row:1,column:1},to:{row:Math.max(rows.length+1,1),column:UNIFIED_EMP_HEAD.length}};
+  return ws;
+}
 
 async function downloadUnified(){
   const btn=document.getElementById('dl-unified-btn');
@@ -957,31 +992,90 @@ async function downloadUnified(){
   showError('acc',''); btn.disabled=true;
   try{
     const wb=new ExcelJS.Workbook();
-    // Summary sheet
-    const ws=wb.addWorksheet('סיכום חודשי',{views:[{rightToLeft:true}]});
-    ws.addRow(['חודש שכר','קובץ','עובדים','תקין','שגוי','ללא בסיס פעיל','רטרו/רב-תקופתי','% תקינות']).font={bold:true};
+    // ---- לוח בקרה ----------------------------------------------------------
+    const ws=wb.addWorksheet('לוח בקרה',{views:[{rightToLeft:true,showGridLines:false}]});
+    ws.mergeCells('A1:H1');
+    const title=ws.getCell('A1'); title.value='בדיקת התאמת תלושים — דוח מאוחד';
+    title.font={size:16,bold:true,color:{argb:XL.NAVY}};
+    ws.mergeCells('A2:H2');
+    const sub=ws.getCell('A2');
+    sub.value=`${_bulkData.perFile.length} קבצים · הופק ${new Date().toLocaleDateString('he-IL')} · תלוש תקין = הפרש עד ₪1`;
+    sub.font={size:10,color:{argb:XL.MUTED}};
     const tot={workers:0,valid:0,invalid:0,no_base:0,multi:0};
+    for(const s of _bulkData.perFile){tot.workers+=s.workers;tot.valid+=s.valid;tot.invalid+=s.invalid;tot.no_base+=s.no_base;tot.multi+=s.multi;}
+    const active=tot.valid+tot.invalid, acc=active?tot.valid/active:0;
+    const kpis=[['סה"כ עובדים',tot.workers,null,INT_FMT],['תקינים',tot.valid,XL.GOODT,INT_FMT],
+      ['שגויים — לבדיקה',tot.invalid,XL.BADT,INT_FMT],['% תקינות (פעילים)',acc,acc>=0.99?XL.GOODT:XL.WARNT,'0.00%'],
+      ['ללא בסיס פעיל',tot.no_base,XL.WARNT,INT_FMT],['רטרו / רב-תקופתי',tot.multi,XL.WARNT,INT_FMT]];
+    kpis.forEach(([t,v,color,fmt],i)=>{
+      const col=i+1;
+      const tc=ws.getRow(4).getCell(col); tc.value=t; tc.font={size:10,color:{argb:XL.MUTED}};
+      tc.alignment={horizontal:'center',vertical:'bottom'}; tc.fill=fill(XL.TILE);
+      const vc=ws.getRow(5).getCell(col); vc.value=v; vc.numFmt=fmt;
+      vc.font={size:15,bold:true,color:{argb:color||'FF0B0B0B'}};
+      vc.alignment={horizontal:'center',vertical:'top'}; vc.fill=fill(XL.TILE);
+    });
+    ws.getRow(4).height=16; ws.getRow(5).height=24;
+    ws.addRow([]);
+    styleHeaderRow(ws,['חודש שכר','קובץ','עובדים','תקין','שגוי','ללא בסיס','רטרו','% תקינות'],[12,20,11,11,9,10,8,11]);
+    const headR=ws.lastRow.number;
     for(const s of _bulkData.perFile){
-      ws.addRow([s.month,s.name,s.workers,s.valid,s.invalid,s.no_base,s.multi,s.acc]);
-      tot.workers+=s.workers;tot.valid+=s.valid;tot.invalid+=s.invalid;tot.no_base+=s.no_base;tot.multi+=s.multi;
+      const r=ws.addRow([s.month,s.name,s.workers,s.valid,s.invalid,s.no_base,s.multi,s.acc/100]);
+      [3,4,5,6,7].forEach(ci=>{r.getCell(ci).numFmt=INT_FMT;});
+      r.getCell(4).font={color:{argb:XL.GOODT}};
+      if(s.invalid) r.getCell(5).font={bold:true,color:{argb:XL.BADT}};
+      r.getCell(8).numFmt='0.00%';
     }
-    const active=tot.valid+tot.invalid;
-    const trow=ws.addRow(['סה"כ','',tot.workers,tot.valid,tot.invalid,tot.no_base,tot.multi,active?SalaryEngine.round2(tot.valid/active*100):0]);
-    trow.font={bold:true};
-    ws.columns.forEach((c,i)=>c.width=i===1?24:(i===0?12:13));
-    // Per-employee sheet
-    const ws2=wb.addWorksheet('פר עובד',{views:[{rightToLeft:true,state:'frozen',ySplit:1}]});
-    ws2.addRow(UNIFIED_EMP_HEAD).font={bold:true};
-    const YELLOW={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFF2AB'}};
-    for(const row of _bulkData.perEmp){
-      const r=ws2.addRow(row.slice(0,14));       // last item is raw status (for coloring)
-      if(row[14]==='invalid') r.eachCell(c=>{c.fill=YELLOW;});
+    const lastR=ws.lastRow.number;
+    const trow=ws.addRow(['סה"כ','',tot.workers,tot.valid,tot.invalid,tot.no_base,tot.multi,acc]);
+    trow.font={bold:true}; [3,4,5,6,7].forEach(ci=>{trow.getCell(ci).numFmt=INT_FMT;}); trow.getCell(8).numFmt='0.00%';
+    ws.addConditionalFormatting({ref:`H${headR+1}:H${lastR}`,rules:[
+      {type:'cellIs',operator:'greaterThanOrEqual',formulae:['0.99'],priority:1,
+       style:{font:{color:{argb:XL.GOODT}},fill:fill(XL.GOODB)}},
+      {type:'cellIs',operator:'lessThan',formulae:['0.95'],priority:2,
+       style:{font:{color:{argb:XL.BADT}},fill:fill(XL.BADB)}},
+      {type:'cellIs',operator:'lessThan',formulae:['0.99'],priority:3,
+       style:{font:{color:{argb:XL.WARNT}},fill:fill(XL.WARNB)}}]});
+    ws.addConditionalFormatting({ref:`C${headR+1}:C${lastR}`,rules:[
+      {type:'dataBar',minLength:0,maxLength:100,priority:4,cfvo:[{type:'num',value:0},{type:'max'}],color:{argb:XL.BAR}}]});
+    ws.addConditionalFormatting({ref:`E${headR+1}:E${lastR}`,rules:[
+      {type:'dataBar',minLength:0,maxLength:100,priority:5,cfvo:[{type:'num',value:0},{type:'max'}],color:{argb:XL.REDBAR}}]});
+
+    // ---- שגויים לבדיקה (work queue, sorted by |base diff|) -------------------
+    const inv=_bulkData.perEmp.filter(r=>r[15]==='invalid')
+      .slice().sort((a,b)=>Math.abs(b[9]??b[12]??0)-Math.abs(a[9]??a[12]??0));
+    empSheet(wb,'שגויים לבדיקה',inv);
+    // ---- פר עובד --------------------------------------------------------------
+    empSheet(wb,'פר עובד',_bulkData.perEmp);
+    // ---- פילוח משרדים ----------------------------------------------------------
+    const agg=new Map();
+    for(const r of _bulkData.perEmp){
+      const k=r[3]||'—';
+      if(!agg.has(k)) agg.set(k,{w:0,v:0,i:0});
+      const o=agg.get(k); o.w++; if(r[15]==='valid')o.v++; else if(r[15]==='invalid')o.i++;
     }
-    ws2.columns.forEach((c,i)=>c.width=(i===2||i===13)?22:12);
+    const ws4=wb.addWorksheet('פילוח משרדים',{views:[{rightToLeft:true,state:'frozen',ySplit:1}]});
+    styleHeaderRow(ws4,['משרד / גוף','עובדים','תקין','שגוי','% תקינות (פעילים)'],[26,11,11,9,16]);
+    const rows4=[...agg.entries()].sort((a,b)=>b[1].w-a[1].w);
+    for(const [name,o] of rows4){
+      const act=o.v+o.i;
+      const r=ws4.addRow([name,o.w,o.v,o.i,act?o.v/act:null]);
+      [2,3,4].forEach(ci=>{r.getCell(ci).numFmt=INT_FMT;});
+      if(o.i) r.getCell(4).font={bold:true,color:{argb:XL.BADT}};
+      r.getCell(5).numFmt='0.0%';
+    }
+    const l4=ws4.lastRow.number;
+    ws4.addConditionalFormatting({ref:`B2:B${l4}`,rules:[
+      {type:'dataBar',minLength:0,maxLength:100,priority:1,cfvo:[{type:'num',value:0},{type:'max'}],color:{argb:XL.BAR}}]});
+    ws4.addConditionalFormatting({ref:`E2:E${l4}`,rules:[
+      {type:'cellIs',operator:'greaterThanOrEqual',formulae:['0.99'],priority:2,style:{fill:fill(XL.GOODB)}},
+      {type:'cellIs',operator:'lessThan',formulae:['0.95'],priority:3,style:{fill:fill(XL.BADB)}}]});
+    ws4.autoFilter={from:{row:1,column:1},to:{row:l4,column:5}};
+
     const buf=await wb.xlsx.writeBuffer();
     downloadBlob(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),`בדיקת שכר מאוחדת ${dateStamp()}.xlsx`);
     const el=document.getElementById('bulk-dl-filename');
-    el.textContent=`הקובץ האחוד הורד · ${_bulkData.perFile.length} קבצים · ${_bulkData.perEmp.length.toLocaleString()} רשומות-עובד`;
+    el.textContent=`הקובץ האחוד הורד · ${_bulkData.perFile.length} קבצים · ${_bulkData.perEmp.length.toLocaleString()} רשומות-עובד · ${inv.length.toLocaleString()} שגויים`;
     el.style.display='block'; el.style.color='var(--green)';
   }catch(e){ showError('acc',e.message||String(e)); }
   finally{ btn.disabled=false; }
