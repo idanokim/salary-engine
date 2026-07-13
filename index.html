@@ -1059,19 +1059,31 @@ async function ensureLookups(){
 async function readGolmiRows(file){
   if(typeof XLSX==='undefined') throw new Error('ספריית קריאת האקסל לא נטענה — בדוק את חיבור האינטרנט.');
   const buf=await file.arrayBuffer();
-  const wb=XLSX.read(new Uint8Array(buf),{type:'array',cellDates:true});
+  let wb;
+  try{
+    wb=XLSX.read(new Uint8Array(buf),{type:'array',cellDates:true});
+  }catch(e){
+    // Turn the library's cryptic reason into an actionable Hebrew one.
+    const m=String(e&&e.message||e);
+    if(/password/i.test(m)) throw new Error('הקובץ מוגן בסיסמה — פתח באקסל, הסר את ההגנה ושמור מחדש כ-xlsx');
+    if(/zip|Unsupported|CFB|corrupt/i.test(m)) throw new Error('פורמט לא נתמך (כנראה xls ישן) — פתח באקסל ושמור מחדש כ-‎.xlsx');
+    throw new Error('לא ניתן לקרוא את הקובץ ('+m.slice(0,60)+')');
+  }
   const sn=wb.SheetNames.indexOf('גולמי')>=0?'גולמי':wb.SheetNames[0];
   return XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:null});
 }
-// Best-effort pay-month label from the sheet: the first Date-valued cell in the
-// data rows (the 'תאריך שכר' column), formatted MM/YYYY; else the file name.
+// Pay-month label: the first Date cell in the sheet (the 'תאריך שכר' column),
+// else an MM/YYYY or MM.YYYY pattern in the file name, else the file name.
 function payMonthLabel(rows,fileName){
   for(let i=0;i<Math.min(rows.length,12);i++){
     for(const c of (rows[i]||[])){
       if(c instanceof Date && !isNaN(c)) return String(c.getMonth()+1).padStart(2,'0')+'/'+c.getFullYear();
     }
   }
-  return (fileName||'').replace(/\.xlsx$/i,'');
+  const nm=(fileName||'').replace(/\.(xlsx|xls)$/i,'');
+  const m=nm.match(/(0?[1-9]|1[0-2])[._/](20\d{2})/) || nm.match(/(20\d{2})[._/](0?[1-9]|1[0-2])/);
+  if(m){ const a=+m[1],b=+m[2]; const mm=a>12?b:a, yy=a>12?a:b; return String(mm).padStart(2,'0')+'/'+yy; }
+  return nm;
 }
 async function processFileLocally(file){
   const lk=await ensureLookups();
