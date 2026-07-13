@@ -356,6 +356,15 @@
       const flagged = Object.keys(r.comp_flags);
       if (flagged.length) {
         if (r.status === STATUS.VALID) { r.status = STATUS.INVALID; r.total_match = false; }
+        // Fold the component corrections into the simulator total, so
+        // "סכום מחושב" is the full corrected slip — base AND components.
+        let compDiff = 0;
+        for (const k of flagged) compDiff += r.comp_flags[k].diff;
+        compDiff = round2(compDiff);
+        if (compDiff) {
+          r.total = round2(r.total + compDiff);
+          r.total_diff = round((r.total_diff || 0) + compDiff, 4);
+        }
       }
       r.findings = diagnoseResult(lk, r);
     }
@@ -504,19 +513,15 @@
       .map((o) => ({ ministry_name: o.ministry_name, workers: o.workers, matched: o.matched,
                      accuracy_pct: round(o.matched / o.workers * 100, 2) }))
       .sort((a, b) => b.workers - a.workers).slice(0, 20);
-    const compDiff = (r) => {
-      let d = 0;
-      for (const k in (r.comp_flags || {})) d += r.comp_flags[k].diff;
-      return d;
-    };
-    const fullDiff = (r) => r.total_diff + compDiff(r);
+    // r.total / r.total_diff already include the חוקה component corrections
+    // (folded in by runEngine) — use them directly.
     const inv = active.filter((r) => r.status === STATUS.INVALID)
-      .sort((a, b) => Math.abs(fullDiff(b)) - Math.abs(fullDiff(a))).slice(0, 300);
+      .sort((a, b) => Math.abs(b.total_diff) - Math.abs(a.total_diff)).slice(0, 300);
     const mismatches = inv.map((r) => ({
       worker_id: r.worker_id, ministry_name: r.ministry_name, darga_label: r.darga_label,
       vatek: r.vatek, job_pct: r.job_pct, grade_base: r.grade_base, vatek_multiplier: r.vatek_mult,
-      total_calculated: round2(r.total + compDiff(r)), total_expected: r.expected_total,
-      total_diff: round2(fullDiff(r)),
+      total_calculated: round2(r.total), total_expected: r.expected_total,
+      total_diff: round2(r.total_diff),
       components: r.components.filter((c) => c.calculated).map((c) => ({
         code: c.code, name: c.name, slip: round2(c.expected || 0),
         computed: round2(c.amount || 0), diff: round2(c.diff || 0),
@@ -587,11 +592,10 @@
         }
       }
       // חוקה component flags: expected per the rulebook vs the slip amount.
-      let compDiffTotal = 0;
+      // (r.total already includes these corrections — folded in by runEngine.)
       const flags = r.comp_flags || {};
       for (const k in flags) {
         const code = parseInt(k, 10), chk = flags[k];
-        compDiffTotal += chk.diff;
         if (!invalidCodes.has(code)) {
           invalidCodes.set(code, { computed: chk.expected, slip: chk.slip,
                                    diff: chk.slip - chk.expected, rulebook: true });
@@ -600,7 +604,7 @@
       rows.push({
         meta: [r.worker_id, r.ministry_code, r.ministry_name, r.job_pct, r.kod_darga, r.darga_label, r.vatek],
         slipByCode, slipTotal: r.expected_total,
-        correctedTotal: round2(r.total + compDiffTotal),
+        correctedTotal: round2(r.total),
         invalidCodes, totalInvalid: r.status === STATUS.INVALID,
       });
     }

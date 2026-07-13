@@ -378,6 +378,88 @@ def write_workbook(summary, per_emp, out_path):
     tbl4.tableStyleInfo = TableStyleInfo(name="TableStyleLight15", showRowStripes=True)
     ws4.add_table(tbl4)
 
+    # ---- מגמה בין-חודשית: native Excel charts on the dashboard -----------------
+    months = sorted({r["month"] for r in summary},
+                    key=lambda m: (m.split("/")[-1], m.split("/")[0]))
+    if len(months) > 1:
+        per_month = {m: Counter() for m in months}
+        for r in summary:
+            for k in ("workers", "valid", "invalid"):
+                per_month[r["month"]][k] += r[k]
+        anchor = trow + 3
+        ws.cell(row=anchor - 1, column=1, value="מגמה בין-חודשית").font = \
+            Font(bold=True, color=NAVY)
+        _header_row(ws, anchor, ["חודש", "% תקינות", "שגויים"], [11, 11, 9])
+        for i, m in enumerate(months, start=anchor + 1):
+            c = per_month[m]
+            act = c["valid"] + c["invalid"]
+            ws.cell(row=i, column=1, value=m).border = THIN_BOX
+            pc = ws.cell(row=i, column=2, value=(c["valid"] / act) if act else None)
+            pc.number_format = "0.00%"
+            pc.border = THIN_BOX
+            ic = ws.cell(row=i, column=3, value=c["invalid"])
+            ic.number_format = INT
+            ic.border = THIN_BOX
+        from openpyxl.chart import BarChart, LineChart, Reference
+        lastm = anchor + len(months)
+        line = LineChart()
+        line.title = "% תקינות לפי חודש"
+        line.height, line.width = 7, 13
+        line.y_axis.numFmt = "0%"
+        line.add_data(Reference(ws, min_col=2, min_row=anchor, max_row=lastm),
+                      titles_from_data=True)
+        line.set_categories(Reference(ws, min_col=1, min_row=anchor + 1, max_row=lastm))
+        ws.add_chart(line, f"E{anchor - 1}")
+        bar = BarChart()
+        bar.title = "שגויים לפי חודש"
+        bar.height, bar.width = 7, 13
+        bar.add_data(Reference(ws, min_col=3, min_row=anchor, max_row=lastm),
+                     titles_from_data=True)
+        bar.set_categories(Reference(ws, min_col=1, min_row=anchor + 1, max_row=lastm))
+        ws.add_chart(bar, f"E{anchor + 15}")
+
+        # ---- שינויים בין חודשים: עובד תקין שהפך שגוי ----------------------------
+        month_idx = {m: i for i, m in enumerate(months)}
+        by_worker = defaultdict(dict)
+        for r in per_emp:
+            if r["status"] in ("valid", "invalid"):
+                by_worker[r["worker_id"]][r["month"]] = r
+        regressions = []
+        for wid, per_m in by_worker.items():
+            ms = sorted(per_m, key=lambda m: month_idx.get(m, 99))
+            for a, b in zip(ms, ms[1:]):
+                if per_m[a]["status"] == "valid" and per_m[b]["status"] == "invalid":
+                    cur = per_m[b]
+                    regressions.append({
+                        "worker_id": wid, "ministry": cur["ministry"],
+                        "darga": cur["darga"], "from_m": a, "to_m": b,
+                        "total_diff": cur["total_diff"], "flags": cur["flags"],
+                        "diag": cur["diag"],
+                    })
+        ws5 = wb.create_sheet("שינויים בין חודשים")
+        ws5.sheet_view.rightToLeft = True
+        ws5.freeze_panes = "A3"
+        ws5.merge_cells("A1:H1")
+        h = ws5["A1"]
+        h.value = ("עובדים שהיו תקינים בחודש מוקדם והפכו שגויים בחודש מאוחר — "
+                   f"{len(regressions)} מקרים · ממוין לפי גודל הפער")
+        h.font = Font(bold=True, color=NAVY)
+        _header_row(ws5, 2, ["מסד עובד", "משרד", "דרגה", "תקין בחודש",
+                             "שגוי בחודש", "הפרש כולל", "רכיבים חריגים", "אבחון"],
+                    [12, 22, 8, 12, 12, 12, 34, 34])
+        regressions.sort(key=lambda r: abs(r["total_diff"] or 0), reverse=True)
+        for i, r in enumerate(regressions, start=3):
+            vals = [r["worker_id"], r["ministry"], r["darga"], r["from_m"],
+                    r["to_m"], r["total_diff"], r["flags"], r["diag"]]
+            for c_i, v in enumerate(vals, start=1):
+                cell = ws5.cell(row=i, column=c_i, value=v)
+                cell.border = THIN_BOX
+                if c_i == 1:
+                    cell.number_format = INT
+                if c_i == 6:
+                    cell.number_format = MONEY
+                    cell.font = Font(color=BAD_TXT, bold=True)
+
     wb.save(out_path)
 
 

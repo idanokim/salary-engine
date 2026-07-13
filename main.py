@@ -557,6 +557,13 @@ def run_engine_full(workers_raw: dict, lookups: dict) -> list:
                 result.errors.append(
                     f"רכיב {code} ({chk['name']}): בתלוש {chk['slip']}, "
                     f"תקני {chk['expected']} (הפרש {chk['diff']})")
+            # Fold the component corrections into the simulator total, so
+            # "סכום מחושב" is the full corrected slip — base AND components —
+            # and never equals the slip total when a component is wrong.
+            comp_diff = round(sum(chk["diff"] for chk in flags.values()), 2)
+            if comp_diff:
+                result.total = round(result.total + comp_diff, 2)
+                result.total_diff = round((result.total_diff or 0) + comp_diff, 4)
         e["findings"] = diagnose_entry(e, lookups)
     return entries
 
@@ -829,14 +836,14 @@ def build_highlighted_export(excel_path: str, lookups: Optional[dict] = None) ->
             for comp in result.components:
                 if comp.calculated and comp.diff is not None and abs(comp.diff) > MATCH_THRESHOLD:
                     invalid_codes[comp.code] = comp  # comp.amount = correct, comp.expected = slip
-        comp_diff_total = sum(chk["diff"] for chk in comp_flags.values())
-
+        # result.total already includes the חוקה component corrections
+        # (folded in by run_engine_full) — do not add them again here.
         per_worker.append({
             "meta": [worker_id, ministry_code, ministry_name, job_pct,
                      kod_darga, darga_label, vatek],
             "slip_by_code": slip_by_code,
             "slip_total": result.expected_total,
-            "corrected_total": round(result.total + comp_diff_total, 2),
+            "corrected_total": round(result.total, 2),
             "invalid_codes": invalid_codes,
             "comp_flags": comp_flags,
             "total_invalid": result.status == STATUS_INVALID,
