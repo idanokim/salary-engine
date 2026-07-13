@@ -1159,10 +1159,16 @@ async function runBulk(files){
           let compCorr=0; for(const k in (r.comp_flags||{})) compCorr+=r.comp_flags[k].diff;
           const totalCalc=SalaryEngine.round2(r.total+compCorr);
           const totalDiff=SalaryEngine.round2(totalCalc-(r.expected_total||0));
+          // Split גמול gap by component so it sits beside the base gap: A=667,
+          // B=897. Gap = slip − standard (positive → slip higher). Empty = no gap.
+          const gf=r.comp_flags||{};
+          const gmulA=gf[667]?SalaryEngine.round2(gf[667].slip-gf[667].expected):null;
+          const gmulB=gf[897]?SalaryEngine.round2(gf[897].slip-gf[897].expected):null;
           perEmp.push([month, f.name.replace(/\.xlsx$/i,''), r.worker_id, r.ministry_name,
             r.darga_label, r.vatek, r.job_pct,
             SalaryEngine.round2(baseSlip), baseCalc?SalaryEngine.round2(baseCalc):null,
             baseCalc?SalaryEngine.round2(baseCalc-baseSlip):null,
+            gmulA, gmulB,
             r.expected_total, totalCalc, totalDiff, BULK_STATUS_HE[r.status]||r.status, flags, r.status]);
         }
         const active=v+inv;
@@ -1185,12 +1191,15 @@ async function runBulk(files){
   finally{ setTimeout(()=>setProgress('acc',null),600); }
 }
 
-// ₪ value of a bulk per-employee row's anomaly (base gap, else total gap).
-function rowAnomaly(r){ return Math.abs((r[9]!=null?r[9]:r[12])||0); }
+// ₪ magnitude of a bulk per-employee row's anomaly: the larger of the base gap
+// (idx 9) and the corrected-total gap (idx 14, which already folds in every
+// component correction incl. גמול), so a component-only mismatch still ranks.
+const R_STATUS=17;
+function rowAnomaly(r){ return Math.max(Math.abs(r[9]||0), Math.abs(r[14]||0)); }
 // Sum of anomaly ₪ per file key (month+name), computed from perEmp rows.
 function anomalySums(perEmp){
   const by=new Map(); let total=0;
-  for(const r of perEmp){ if(r[15]!=='invalid') continue;
+  for(const r of perEmp){ if(r[R_STATUS]!=='invalid') continue;
     const v=rowAnomaly(r); total+=v;
     const k=r[0]+'|'+r[1]; by.set(k,(by.get(k)||0)+v); }
   return {by,total};
@@ -1267,7 +1276,7 @@ function computeFlips(perEmp){
   for(const r of perEmp){
     const id=r[2];
     if(!hist.has(id)) hist.set(id,[]);
-    hist.get(id).push({mk:monthKey(r[0]),month:r[0],status:r[15],diff:rowAnomaly(r),ministry:r[3],darga:r[4]});
+    hist.get(id).push({mk:monthKey(r[0]),month:r[0],status:r[R_STATUS],diff:rowAnomaly(r),ministry:r[3],darga:r[4]});
   }
   const flips=[];
   for(const [id,rows] of hist){
@@ -1307,7 +1316,7 @@ function printExecSummary(){
       ep.months.push([s.month,s.workers,s.valid,s.invalid,sums.by.get(s.month+'|'+s.name)||0,s.acc]);
     }
     ep.anom=sums.total;
-    ep.tops=_bulkData.perEmp.filter(r=>r[15]==='invalid')
+    ep.tops=_bulkData.perEmp.filter(r=>r[R_STATUS]==='invalid')
       .sort((a,b)=>rowAnomaly(b)-rowAnomaly(a)).slice(0,12)
       .map(r=>[r[2],r[3],r[0],rowAnomaly(r)]);
     ep.src=`${_bulkData.perFile.length} קבצים חודשיים`;
@@ -1367,8 +1376,19 @@ function renderLiveGrades(){
     ||'<tr><td colspan="2" class="c-muted">אין תוצאות</td></tr>';
 }
 
-const UNIFIED_EMP_HEAD=['חודש שכר','קובץ','מסד עובד','משרד','דרגה','ותק','חלקיות',
-  'בסיס בתלוש','בסיס מחושב','הפרש בסיס','סכום בתלוש','סכום מחושב','הפרש כולל','סטטוס','רכיבים חריגים'];
+// Column spec for the employee sheets — role-driven so nothing drifts when a
+// column is added. m=money ₪, n=integer, diff=gap cell (colored by sign/size).
+const EMP_SPEC=[
+  {h:'חודש שכר',w:11}, {h:'קובץ',w:18}, {h:'מסד עובד',w:12,fmt:'n'},
+  {h:'משרד',w:22}, {h:'דרגה',w:8}, {h:'ותק',w:8}, {h:'חלקיות',w:8},
+  {h:'בסיס בתלוש',w:13,fmt:'m'}, {h:'בסיס מחושב',w:13,fmt:'m'},
+  {h:'הפרש בסיס',w:12,fmt:'m',diff:1},
+  {h:"פער גמול א'",w:12,fmt:'m',diff:1}, {h:"פער גמול ב'",w:12,fmt:'m',diff:1},
+  {h:'סכום בתלוש',w:13,fmt:'m'}, {h:'סכום מחושב',w:13,fmt:'m'},
+  {h:'הפרש כולל',w:12,fmt:'m',diff:1},
+  {h:'סטטוס',w:16,status:1}, {h:'רכיבים חריגים',w:30},
+];
+const UNIFIED_EMP_HEAD=EMP_SPEC.map(c=>c.h);
 // Workbook palette (light surface; status colors always paired with a label)
 const XL={NAVY:'FF1E3A5F', WHITE:'FFFFFFFF', TILE:'FFF4F5F7', MUTED:'FF6B7280',
   GOODT:'FF0B7A0B', GOODB:'FFE7F4E7', BADT:'FFA82626', BADB:'FFFBE9E9',
@@ -1384,23 +1404,33 @@ function styleHeaderRow(ws,labels,widths){
   widths.forEach((w,i)=>{ws.getColumn(i+1).width=w;});
   return r;
 }
-// One employee-rows sheet: navy header, freeze, autofilter, money formats,
-// status coloring. rows: arrays matching UNIFIED_EMP_HEAD + [15]=raw status.
+// One employee-rows sheet, driven by EMP_SPEC: navy header, header row + the
+// first three columns (month/file/מסד) frozen so the ID stays put when scrolling
+// right through the money columns; autofilter; ₪ formats; status colored (with
+// its label); every gap cell tinted red when it carries a real gap so the eye
+// lands on it. The row's last element is the raw status (for coloring).
 function empSheet(wb,title,rows){
-  const ws=wb.addWorksheet(title,{views:[{rightToLeft:true,state:'frozen',ySplit:1}]});
-  styleHeaderRow(ws,UNIFIED_EMP_HEAD,[11,18,12,22,8,8,8,13,13,12,13,13,12,16,30]);
-  const moneyCols=[8,9,10,11,12,13];
+  const ws=wb.addWorksheet(title,{views:[{rightToLeft:true,state:'frozen',xSplit:3,ySplit:1}]});
+  styleHeaderRow(ws,UNIFIED_EMP_HEAD,EMP_SPEC.map(c=>c.w));
+  const statusIdx=EMP_SPEC.findIndex(c=>c.status)+1;
+  const stRaw=EMP_SPEC.length;          // raw status is one past the visible cols
   for(const row of rows){
-    const r=ws.addRow(row.slice(0,15));
-    moneyCols.forEach(ci=>{r.getCell(ci).numFmt=MONEY_FMT;});
-    r.getCell(3).numFmt=INT_FMT;
-    const st=row[15], stCell=r.getCell(14);
-    if(st==='invalid'){ stCell.fill=fill(XL.BADB); stCell.font={bold:true,color:{argb:XL.BADT}};
-      r.getCell(10).font={bold:true,color:{argb:XL.BADT}}; r.getCell(13).font={bold:true,color:{argb:XL.BADT}}; }
-    else if(st==='valid'){ stCell.font={color:{argb:XL.GOODT}}; }
-    else { stCell.font={color:{argb:XL.WARNT}}; }
+    const r=ws.addRow(row.slice(0,EMP_SPEC.length));
+    const invalid=row[stRaw]==='invalid';
+    EMP_SPEC.forEach((c,i)=>{
+      const cell=r.getCell(i+1);
+      if(c.fmt==='m') cell.numFmt=MONEY_FMT; else if(c.fmt==='n') cell.numFmt=INT_FMT;
+      // A gap cell with a non-trivial value gets a red tint — instantly visible.
+      if(c.diff && typeof cell.value==='number' && Math.abs(cell.value)>1){
+        cell.fill=fill(XL.BADB); cell.font={bold:true,color:{argb:XL.BADT}};
+      }
+      if(c.status){
+        cell.font={bold:invalid,color:{argb:invalid?XL.BADT:row[stRaw]==='valid'?XL.GOODT:XL.WARNT}};
+        if(invalid) cell.fill=fill(XL.BADB);
+      }
+    });
   }
-  ws.autoFilter={from:{row:1,column:1},to:{row:Math.max(rows.length+1,1),column:UNIFIED_EMP_HEAD.length}};
+  ws.autoFilter={from:{row:1,column:1},to:{row:Math.max(rows.length+1,1),column:EMP_SPEC.length}};
   return ws;
 }
 
@@ -1465,7 +1495,7 @@ async function downloadUnified(){
       {type:'dataBar',minLength:0,maxLength:100,priority:5,cfvo:[{type:'num',value:0},{type:'max'}],color:{argb:XL.REDBAR}}]});
 
     // ---- שגויים לבדיקה (work queue, sorted by ₪) -------------------------------
-    const inv=_bulkData.perEmp.filter(r=>r[15]==='invalid')
+    const inv=_bulkData.perEmp.filter(r=>r[R_STATUS]==='invalid')
       .slice().sort((a,b)=>rowAnomaly(b)-rowAnomaly(a));
     empSheet(wb,'שגויים לבדיקה',inv);
     // ---- שינויי סטטוס בין חודשים ------------------------------------------------
@@ -1488,7 +1518,7 @@ async function downloadUnified(){
     for(const r of _bulkData.perEmp){
       const k=r[3]||'—';
       if(!agg.has(k)) agg.set(k,{w:0,v:0,i:0});
-      const o=agg.get(k); o.w++; if(r[15]==='valid')o.v++; else if(r[15]==='invalid')o.i++;
+      const o=agg.get(k); o.w++; if(r[R_STATUS]==='valid')o.v++; else if(r[R_STATUS]==='invalid')o.i++;
     }
     const ws4=wb.addWorksheet('פילוח משרדים',{views:[{rightToLeft:true,state:'frozen',ySplit:1}]});
     styleHeaderRow(ws4,['משרד / גוף','עובדים','תקין','שגוי','% תקינות (פעילים)'],[26,11,11,9,16]);

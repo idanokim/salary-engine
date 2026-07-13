@@ -136,10 +136,12 @@ def collect(paths):
             bs = sum((cp.expected or 0.0) for cp in r.components
                      if cp.code in engine.BASE_CODES)
             bc = sum(cp.amount for cp in r.components if cp.calculated)
-            # gap in גמולי השתלמות (slip minus standard), from the gmul flags
-            gmul_diff = round(sum(chk["slip"] - chk["expected"]
-                                  for code, chk in flags.items()
-                                  if code in (667, 897)), 2) or None
+            # gap in גמולי השתלמות (slip − standard), split so A (667) and B
+            # (897) sit next to the base gap; empty when the גמול matched.
+            gmul_a = (round(flags[667]["slip"] - flags[667]["expected"], 2)
+                      if 667 in flags else None)
+            gmul_b = (round(flags[897]["slip"] - flags[897]["expected"], 2)
+                      if 897 in flags else None)
             # "סכום מחושב" must reflect the CORRECTED total: the recomputed base
             # plus the rulebook-correct value of every flagged component. Without
             # the component correction, a slip whose base matches but whose
@@ -155,7 +157,7 @@ def collect(paths):
                 "base_slip": round(bs, 2),
                 "base_calc": round(bc, 2) if bc else None,
                 "base_diff": round(bc - bs, 2) if bc else None,
-                "gmul_diff": gmul_diff,
+                "gmul_a": gmul_a, "gmul_b": gmul_b,
                 "total_slip": r.expected_total, "total_calc": total_calc,
                 "total_diff": total_diff, "status": r.status,
                 "flags": "; ".join(
@@ -166,33 +168,35 @@ def collect(paths):
     return summary, per_emp
 
 
+# (key, header, width, number-format, is-gap-cell). Gap cells are red-tinted
+# when they carry a real value so the eye lands on them.
 EMP_COLS = [
-    ("month", "חודש שכר", 11, None), ("file", "קובץ", 18, None),
-    ("worker_id", "מסד עובד", 12, INT), ("ministry", "משרד", 22, None),
-    ("darga", "דרגה", 8, None), ("vatek", "ותק", 8, None),
-    ("job_pct", "חלקיות", 8, None), ("base_slip", "בסיס בתלוש", 13, MONEY),
-    ("base_calc", "בסיס מחושב", 13, MONEY), ("base_diff", "הפרש בסיס", 12, MONEY),
-    ("gmul_diff", "הפרש גמולים", 13, MONEY),
-    ("total_slip", "סכום בתלוש", 13, MONEY), ("total_calc", "סכום מחושב", 13, MONEY),
-    ("total_diff", "הפרש כולל", 12, MONEY), ("status_he", "סטטוס", 16, None),
-    ("flags", "רכיבים חריגים", 30, None), ("diag", "אבחון", 30, None),
+    ("month", "חודש שכר", 11, None, False), ("file", "קובץ", 18, None, False),
+    ("worker_id", "מסד עובד", 12, INT, False), ("ministry", "משרד", 22, None, False),
+    ("darga", "דרגה", 8, None, False), ("vatek", "ותק", 8, None, False),
+    ("job_pct", "חלקיות", 8, None, False), ("base_slip", "בסיס בתלוש", 13, MONEY, False),
+    ("base_calc", "בסיס מחושב", 13, MONEY, False), ("base_diff", "הפרש בסיס", 12, MONEY, True),
+    ("gmul_a", "פער גמול א'", 12, MONEY, True), ("gmul_b", "פער גמול ב'", 12, MONEY, True),
+    ("total_slip", "סכום בתלוש", 13, MONEY, False), ("total_calc", "סכום מחושב", 13, MONEY, False),
+    ("total_diff", "הפרש כולל", 12, MONEY, True), ("status_he", "סטטוס", 16, None, False),
+    ("flags", "רכיבים חריגים", 30, None, False), ("diag", "אבחון", 30, None, False),
 ]
 
 
 def _emp_sheet(wb, title, rows, table_name, highlight_invalid):
     ws = wb.create_sheet(title)
     ws.sheet_view.rightToLeft = True
-    ws.freeze_panes = "A2"
-    _header_row(ws, 1, [he for _, he, _, _ in EMP_COLS],
-                [w for _, _, w, _ in EMP_COLS])
+    ws.freeze_panes = "D2"            # keep month/file/מסד visible when scrolling ₪ cols
+    _header_row(ws, 1, [he for _, he, _, _, _ in EMP_COLS],
+                [w for _, _, w, _, _ in EMP_COLS])
     inv_font = Font(color=BAD_TXT, bold=True)
     inv_fill = PatternFill("solid", fgColor=BAD_BG)
     ok_font = Font(color=GOOD_TXT)
     warn_font = Font(color=WARN_TXT)
     for r_i, row in enumerate(rows, start=2):
         vals = [row.get(k) if k != "status_he" else STATUS_HE[row["status"]]
-                for k, _, _, _ in EMP_COLS]
-        for c_i, ((key, _, _, fmt), v) in enumerate(zip(EMP_COLS, vals), start=1):
+                for k, _, _, _, _ in EMP_COLS]
+        for c_i, ((key, _, _, fmt, is_gap), v) in enumerate(zip(EMP_COLS, vals), start=1):
             cell = ws.cell(row=r_i, column=c_i, value=v)
             if fmt:
                 cell.number_format = fmt
@@ -202,8 +206,10 @@ def _emp_sheet(wb, title, rows, table_name, highlight_invalid):
                              else ok_font if st == "valid" else warn_font)
                 if st == "invalid":
                     cell.fill = inv_fill
-            elif key in ("base_diff", "gmul_diff", "total_diff") and row["status"] == "invalid":
+            elif is_gap and isinstance(v, (int, float)) and abs(v) > 1:
+                # any real gap gets a red tint — the eye lands on it directly
                 cell.font = inv_font
+                cell.fill = inv_fill
         if highlight_invalid and row["status"] == "invalid":
             ws.cell(row=r_i, column=1).fill = inv_fill
     if rows:
@@ -216,9 +222,10 @@ def _emp_sheet(wb, title, rows, table_name, highlight_invalid):
 
 
 def _anomaly(row):
-    """₪ value of an invalid row's gap (base gap, else total gap)."""
-    v = row["base_diff"] if row["base_diff"] is not None else row["total_diff"]
-    return abs(v or 0.0)
+    """₪ magnitude of a row's gap: larger of the base gap and the corrected-total
+    gap (the latter folds in component corrections incl. גמול), so a component-
+    only mismatch still ranks."""
+    return max(abs(row["base_diff"] or 0.0), abs(row["total_diff"] or 0.0))
 
 
 def _month_key(m):
