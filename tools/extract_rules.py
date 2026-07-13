@@ -70,10 +70,20 @@ HISTORICAL_RATES = {
 # without the code contributes 0) and removes hundreds of false flags on
 # historical files — identified empirically: each miss's unaccounted base equals
 # exactly that component's slip amount.
+#
+# 5539 (ממונה, sheet "5539 MEMUNE") is NOT empirical: it is present in the base
+# formulas (SACHAR row 11) of the five agreement components in the Progim
+# 13.07.2026 workbook, but was absent from the older workbook the live
+# component_rules.json was built from. Listed here so a re-extraction from the
+# older workbook still carries it; extracting from the 2026 workbook picks it up
+# natively. Effect on the sample files is ≤ a few slips.
 ERA_BASE_EXTRA = {
     4544: [1961, 1967, 5270, 636],                    # רפורמה ב' / ותק פעילות / מנמ"ש
-    4934: [4147, 4651, 5270, 920, 1961, 1967, 636],   # תוספת רפורמה / תוספת שכר / ותק פעילות / 7.5% / רפורמה ב'
-    4994: [4147, 4651, 5270, 920, 1961, 1967, 636],
+    4934: [4147, 4651, 5270, 920, 1961, 1967, 636, 5539],  # + 5539 ממונה (Progim 2026)
+    4994: [4147, 4651, 5270, 920, 1961, 1967, 636, 5539],
+    5216: [5539],                                     # ממונה — Progim 2026 base
+    5401: [5539],
+    5533: [5539],
     858:  [4624],
     4169: [4624],
 }

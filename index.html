@@ -1119,37 +1119,55 @@ async function runBulk(files){
   showError('acc',''); setProgress('acc',5);
   const bd=document.getElementById('bulk-dl-filename'); bd.textContent=''; bd.style.display='none';
   const t0=performance.now();
-  const perFile=[], perEmp=[];
+  const perFile=[], perEmp=[], failed=[];
   try{
     await ensureLookups();
     for(let i=0;i<files.length;i++){
       const f=files[i];
-      const rows=await readGolmiRows(f);
-      const month=payMonthLabel(rows,f.name);
-      const results=SalaryEngine.runEngine(_engineLookups,SalaryEngine.loadGolmi(rows),_engineRules);
-      let v=0,inv=0,nb=0,mp=0;
-      for(const r of results){
-        if(r.status==='valid')v++; else if(r.status==='invalid')inv++;
-        else if(r.status==='no_base')nb++; else if(r.status==='multi_period')mp++;
-        let baseSlip=0,baseCalc=0;
-        for(const c of r.components){
-          if(c.code===1||c.code===2||c.code===10002) baseSlip+=(c.expected||0);
-          if(c.calculated) baseCalc+=(c.amount||0);
+      // Each file is isolated: one unreadable file (stale handle, non-xlsx,
+      // wrong sheet) is skipped and reported — it never aborts the whole batch.
+      try{
+        const rows=await readGolmiRows(f);
+        const month=payMonthLabel(rows,f.name);
+        const results=SalaryEngine.runEngine(_engineLookups,SalaryEngine.loadGolmi(rows),_engineRules);
+        if(!results.length) throw new Error('לא נמצאו עובדים בגיליון');
+        let v=0,inv=0,nb=0,mp=0;
+        for(const r of results){
+          if(r.status==='valid')v++; else if(r.status==='invalid')inv++;
+          else if(r.status==='no_base')nb++; else if(r.status==='multi_period')mp++;
+          let baseSlip=0,baseCalc=0;
+          for(const c of r.components){
+            if(c.code===1||c.code===2||c.code===10002) baseSlip+=(c.expected||0);
+            if(c.calculated) baseCalc+=(c.amount||0);
+          }
+          const flags=Object.keys(r.comp_flags||{}).map(k=>`${k} (${r.comp_flags[k].name}): ${r.comp_flags[k].slip} במקום ${r.comp_flags[k].expected}`).join('; ');
+          // "סכום מחושב" = corrected total: recomputed base + rulebook-correct value
+          // of each flagged component. Otherwise a component-only mismatch would
+          // show computed == slip (identical columns) despite a real gap.
+          let compCorr=0; for(const k in (r.comp_flags||{})) compCorr+=r.comp_flags[k].diff;
+          const totalCalc=SalaryEngine.round2(r.total+compCorr);
+          const totalDiff=SalaryEngine.round2(totalCalc-(r.expected_total||0));
+          perEmp.push([month, f.name.replace(/\.xlsx$/i,''), r.worker_id, r.ministry_name,
+            r.darga_label, r.vatek, r.job_pct,
+            SalaryEngine.round2(baseSlip), baseCalc?SalaryEngine.round2(baseCalc):null,
+            baseCalc?SalaryEngine.round2(baseCalc-baseSlip):null,
+            r.expected_total, totalCalc, totalDiff, BULK_STATUS_HE[r.status]||r.status, flags, r.status]);
         }
-        const flags=Object.keys(r.comp_flags||{}).map(k=>`${k} (${r.comp_flags[k].name}): ${r.comp_flags[k].slip} במקום ${r.comp_flags[k].expected}`).join('; ');
-        perEmp.push([month, f.name.replace(/\.xlsx$/i,''), r.worker_id, r.ministry_name,
-          r.darga_label, r.vatek, r.job_pct,
-          SalaryEngine.round2(baseSlip), baseCalc?SalaryEngine.round2(baseCalc):null,
-          baseCalc?SalaryEngine.round2(baseCalc-baseSlip):null,
-          r.expected_total, r.total, r.total_diff, BULK_STATUS_HE[r.status]||r.status, flags, r.status]);
+        const active=v+inv;
+        perFile.push({name:f.name.replace(/\.xlsx$/i,''), month, workers:results.length,
+          valid:v, invalid:inv, no_base:nb, multi:mp, acc:active?SalaryEngine.round2(v/active*100):0});
+      }catch(fe){
+        failed.push({name:f.name, msg:fe.message||String(fe)});
       }
-      const active=v+inv;
-      perFile.push({name:f.name.replace(/\.xlsx$/i,''), month, workers:results.length,
-        valid:v, invalid:inv, no_base:nb, multi:mp, acc:active?SalaryEngine.round2(v/active*100):0});
       setProgress('acc',5+Math.round((i+1)/files.length*85));
     }
+    if(!perFile.length) throw new Error(`אף קובץ לא נקרא בהצלחה (${failed.length} נכשלו). ` + (failed[0]?`הראשון: ${failed[0].msg}`:''));
     _bulkData={perFile,perEmp};
     renderBulk(perFile, Math.round((performance.now()-t0)/100)/10);
+    if(failed.length){
+      const names=failed.slice(0,6).map(x=>x.name).join(', ')+(failed.length>6?'…':'');
+      showError('acc',`${failed.length} קבצים דולגו (לא נקראו): ${names}. השאר עובדו — ${perFile.length} קבצים בקובץ האחוד.`);
+    }
     setProgress('acc',100);
   }catch(e){ showError('acc',e.message||String(e)); }
   finally{ setTimeout(()=>setProgress('acc',null),600); }

@@ -126,6 +126,14 @@ def collect(paths):
             gmul_diff = round(sum(chk["slip"] - chk["expected"]
                                   for code, chk in flags.items()
                                   if code in (667, 897)), 2) or None
+            # "סכום מחושב" must reflect the CORRECTED total: the recomputed base
+            # plus the rulebook-correct value of every flagged component. Without
+            # the component correction, a slip whose base matches but whose
+            # תוספת is wrong would show computed == slip (identical columns) even
+            # though the engine found a real gap.
+            comp_corr = sum(chk["diff"] for chk in flags.values())  # expected - slip
+            total_calc = round(r.total + comp_corr, 2)
+            total_diff = round(total_calc - (r.expected_total or 0.0), 2)
             per_emp.append({
                 "month": month, "file": short, "worker_id": r.worker_id,
                 "ministry": r.ministry_name, "darga": r.darga_label,
@@ -134,8 +142,8 @@ def collect(paths):
                 "base_calc": round(bc, 2) if bc else None,
                 "base_diff": round(bc - bs, 2) if bc else None,
                 "gmul_diff": gmul_diff,
-                "total_slip": r.expected_total, "total_calc": r.total,
-                "total_diff": r.total_diff, "status": r.status,
+                "total_slip": r.expected_total, "total_calc": total_calc,
+                "total_diff": total_diff, "status": r.status,
                 "flags": "; ".join(
                     f"{k} ({v['name']}): {v['slip']} במקום {v['expected']}"
                     for k, v in sorted(flags.items())),
