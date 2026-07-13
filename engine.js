@@ -100,22 +100,32 @@
       if (!Number.isNaN(code)) amounts.set(code, (amounts.get(code) || 0) + (r.amount || 0));
     }
     const checks = {};
+    const jp = jobPct || 1.0;
     for (const k in rules) {
       const rule = rules[k];
-      if (rule.type !== 'percent') continue;
+      if (rule.type !== 'percent' && rule.type !== 'shekel') continue;
       let slip = 0;
       for (const c of rule.codes) slip += (amounts.get(c) || 0);
       if (Math.abs(slip) < 0.01) continue;
-      let base = 0;
-      for (const c of rule.base_codes) base += (amounts.get(c) || 0);
-      base += (rule.base_const || 0) * (jobPct || 1.0);
-      if (base <= 0) continue;
-      let best = rule.rates[0];
-      for (const r of rule.rates) if (Math.abs(base * r - slip) < Math.abs(base * best - slip)) best = r;
-      const expected = round2(base * best);
+      let expected;
+      if (rule.type === 'percent') {
+        let base = 0;
+        for (const c of rule.base_codes) base += (amounts.get(c) || 0);
+        base += (rule.base_const || 0) * jp;
+        if (base <= 0) continue;
+        let best = rule.rates[0];
+        for (const r of rule.rates) if (Math.abs(base * r - slip) < Math.abs(base * best - slip)) best = r;
+        expected = round2(base * best);
+      } else {
+        // shekel: one of a fixed set of flat amounts × job% (e.g. גמול מינהל
+        // 4983 ∈ {105,210,315}). The closest admissible amount is the standard.
+        let best = rule.amounts[0];
+        for (const a of rule.amounts) if (Math.abs(a * jp - slip) < Math.abs(best * jp - slip)) best = a;
+        expected = round2(best * jp);
+      }
       checks[k] = {
         slip: round2(slip), expected, diff: round2(expected - slip),
-        ok: Math.abs(base * best - slip) <= MATCH_THRESHOLD, name: rule.name,
+        ok: Math.abs(expected - slip) <= MATCH_THRESHOLD, name: rule.name,
       };
     }
     return checks;
