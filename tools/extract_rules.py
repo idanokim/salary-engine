@@ -46,6 +46,14 @@ MULTI_RATE = {
     756: [0.30, 0.15, 0.08, 0.075],
 }
 
+# Flat-shekel components: the value is one of a fixed set of amounts (× job%),
+# not a percentage of a base. From the workbook's dedicated tables, e.g. the
+# 'GMUL MINHAL' sheet lists גמול מינהל (4983) ∈ {105, 210, 315}. Emitted as
+# type 'shekel'; a slip amount matches if it equals any admissible amount × job%.
+SHEKEL_SETS = {
+    4983: [105, 210, 315],   # גמול מינהל — GMUL MINHAL sheet
+}
+
 # Historical phase-in schedules (from `tos kibutzi`, `heskem 2016`, `MANMASH
 # 2010`): the collective agreements ramped up over the years, so a slip from an
 # earlier pay period legitimately carries an earlier official rate. A component
@@ -219,6 +227,12 @@ def extract(xlsm_path: str) -> dict:
             "name": {4120: "השלמת שכר", 4173: "תוספת אישית",
                      4643: "השלמת שכר", 4935: "תוספת אמון"}[code],
             "note": "ידני — הערך מדווח (Netunei Gimlai עמודה J), אין נוסחה לאימות",
+        }
+    for code, amounts in SHEKEL_SETS.items():
+        rules[code] = {
+            "codes": [code], "type": "shekel",
+            "name": {4983: "גמול מינהל"}.get(code, str(code)),
+            "amounts": amounts,
         }
     wbv.close()
     return rules

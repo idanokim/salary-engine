@@ -206,22 +206,31 @@ def check_worker_components(components, job_pct, rules) -> dict:
         if code is not None:
             amounts[int(code)] += (amount or 0.0)
     checks = {}
+    jp = job_pct or 1.0
     for code, rule in rules.items():
-        if rule["type"] != "percent":
+        rtype = rule["type"]
+        if rtype not in ("percent", "shekel"):
             continue
         slip = sum(amounts.get(c, 0.0) for c in rule["codes"])
         if abs(slip) < 0.01:
             continue
-        base = sum(amounts.get(c, 0.0) for c in rule["base_codes"])
-        base += rule.get("base_const", 0.0) * (job_pct or 1.0)
-        if base <= 0:
-            continue
-        best_rate = min(rule["rates"], key=lambda r: abs(base * r - slip))
-        expected = round(base * best_rate, 2)
+        if rtype == "percent":
+            base = sum(amounts.get(c, 0.0) for c in rule["base_codes"])
+            base += rule.get("base_const", 0.0) * jp
+            if base <= 0:
+                continue
+            best = min(rule["rates"], key=lambda r: abs(base * r - slip))
+            expected = round(base * best, 2)
+        else:
+            # shekel: the component is one of a fixed set of flat amounts, scaled
+            # by job%. Expected = the closest admissible amount × job% (e.g.
+            # גמול מינהל 4983 ∈ {105, 210, 315}). Wrong amounts still fail all.
+            best = min(rule["amounts"], key=lambda a: abs(a * jp - slip))
+            expected = round(best * jp, 2)
         checks[int(code)] = {
             "slip": round(slip, 2), "expected": expected,
             "diff": round(expected - slip, 2),
-            "ok": abs(base * best_rate - slip) <= MATCH_THRESHOLD,
+            "ok": abs(expected - slip) <= MATCH_THRESHOLD,
             "name": rule["name"],
         }
     return checks

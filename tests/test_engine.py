@@ -199,6 +199,28 @@ def test_plus_prefix_slip_is_valid():
     assert entries[0]["result"].darga_label == "18+"
 
 
+def test_shekel_rule_matches_amount_set():
+    """A flat-shekel component (גמול מינהל 4983 ∈ {105,210,315}) matches the
+    closest admissible amount × job%, and flags anything off the set."""
+    rules = {4983: {"codes": [4983], "name": "גמול מינהל", "type": "shekel",
+                    "amounts": [105, 210, 315]}}
+    # exact amount at full time → ok
+    ok = engine.check_worker_components([(4983, "גמול מינהל", 315.0, "כן")], 1.0, rules)
+    assert ok[4983]["ok"] is True and ok[4983]["expected"] == 315.0
+    # scaled by job% → ok
+    half = engine.check_worker_components([(4983, "גמול מינהל", 157.5, "כן")], 0.5, rules)
+    assert half[4983]["ok"] is True and half[4983]["expected"] == 157.5
+    # off the set → flagged, expected = nearest admissible
+    bad = engine.check_worker_components([(4983, "גמול מינהל", 400.0, "כן")], 1.0, rules)
+    assert bad[4983]["ok"] is False and bad[4983]["expected"] == 315.0
+
+
+def test_shekel_rule_is_in_the_rulebook():
+    rules = engine.get_rules()
+    assert rules[4983]["type"] == "shekel"
+    assert set(rules[4983]["amounts"]) == {105, 210, 315}
+
+
 def test_official_phase_schedules_are_complete():
     """The rulebook must accept every official cumulative phase of the
     framework agreements, so a file from ANY month matches its era's rate."""
