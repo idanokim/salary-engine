@@ -336,7 +336,10 @@ def base_within_tolerance(grade_base, vatek, track, job_pct, slip_base, lookups)
     if grade_base is None:
         return None
     cap = lookups["track_max"].get(int(track))
-    vlo, vhi = vatek - SENIORITY_ROUND, vatek + SENIORITY_ROUND
+    # The caller passes the truncation-corrected vetek (+0.005 when the file
+    # value was not a whole quarter); widen the lower edge by the same amount
+    # so the correction can only refine the check, never newly penalize.
+    vlo, vhi = vatek - SENIORITY_ROUND - 0.005, vatek + SENIORITY_ROUND
     if cap is not None:
         vlo, vhi = min(vlo, cap), min(vhi, cap)
     m_lo = get_vatek_multiplier(lookups, vlo, track)
@@ -348,11 +351,25 @@ def base_within_tolerance(grade_base, vatek, track, job_pct, slip_base, lookups)
     return (lo - MATCH_THRESHOLD) <= slip_base <= (hi + MATCH_THRESHOLD)
 
 
+def normalize_vatek(v: float) -> float:
+    """Undo the גולמי file's 2-decimal truncation of the seniority column.
+
+    The payroll engine works on an eighth-of-year grid (…, 14.125, 14.375, …)
+    but the גולמי export truncates to 2 decimals (14.125 → 14.12). Any value
+    that is not a whole quarter (.0/.25/.5/.75) is therefore a truncated
+    eighth — restore it by adding 0.005 (14.12 → 14.125)."""
+    v = float(v)
+    if round(v * 4, 6) % 1 != 0:
+        return round(v + 0.005, 3)
+    return v
+
+
 def calculate(worker: WorkerInput, lookups: dict) -> SalaryResult:
     errors = []
     component_results = []
     total = 0.0
     track = int(worker.droog or DEFAULT_TRACK)
+    worker.vatek_calculated = normalize_vatek(worker.vatek_calculated or 0)
     grade_base = get_grade_base(lookups, worker.darga_label)
     if grade_base is None:
         errors.append(f"Unknown grade label: {worker.darga_label!r} (kod_darga {worker.kod_darga})")

@@ -206,7 +206,9 @@
     if (gradeBase === null) return null;
     track = parseInt(track, 10) || DEFAULT_TRACK;
     const cap = lk.trackMax[track];
-    let vlo = vatek - SENIORITY_ROUND, vhi = vatek + SENIORITY_ROUND;
+    // vetek arrives truncation-corrected (+0.005); widen the lower edge by the
+    // same amount so the correction never newly penalizes.
+    let vlo = vatek - SENIORITY_ROUND - 0.005, vhi = vatek + SENIORITY_ROUND;
     if (cap !== undefined) { vlo = Math.min(vlo, cap); vhi = Math.min(vhi, cap); }
     const mlo = getVatekMultiplier(lk, vlo, track);
     const mhi = getVatekMultiplier(lk, vhi, track);
@@ -325,12 +327,21 @@
     return remap;
   }
 
+  // Undo the גולמי file's 2-decimal truncation of seniority: the payroll grid
+  // is in eighths (14.125) but the export truncates to 14.12 — a value that is
+  // not a whole quarter is a truncated eighth; restore it (+0.005).
+  function normalizeVatek(v) {
+    v = parseFloat(v) || 0;
+    if (round(v * 4, 6) % 1 !== 0) return round(v + 0.005, 3);
+    return v;
+  }
+
   function calculate(lk, rows, workerId, dargaOverride) {
     const first = rows[0];
     const track = parseInt(first.droog, 10) || DEFAULT_TRACK;
     const darga = (dargaOverride !== undefined && dargaOverride !== null)
       ? dargaOverride : normalizeGradeLabel(first.darga_label);
-    const vatek = parseFloat(first.vatek) || 0;
+    const vatek = normalizeVatek(first.vatek);
     const jobPct = (parseFloat(first.job_pct) || 0) || 1.0;
     const gradeBase = getGradeBase(lk, darga);
     const vatekMult = getVatekMultiplier(lk, vatek, track);
