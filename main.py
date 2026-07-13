@@ -194,7 +194,7 @@ TRUST_MIN_MATCH = 0.97
 TRUST_MIN_N = 20
 
 
-def check_worker_components(components, job_pct, rules) -> dict:
+def check_worker_components(components, job_pct, rules, ministry_code=0) -> dict:
     """Check each rule-covered percentage component on one slip.
 
     components: iterable of (code, name, amount, pensionable) slip rows.
@@ -209,7 +209,7 @@ def check_worker_components(components, job_pct, rules) -> dict:
     jp = job_pct or 1.0
     for code, rule in rules.items():
         rtype = rule["type"]
-        if rtype not in ("percent", "shekel"):
+        if rtype not in ("percent", "shekel", "max22"):
             continue
         slip = sum(amounts.get(c, 0.0) for c in rule["codes"])
         if abs(slip) < 0.01:
@@ -221,6 +221,17 @@ def check_worker_components(components, job_pct, rules) -> dict:
                 continue
             best = min(rule["rates"], key=lambda r: abs(base * r - slip))
             expected = round(base * best, 2)
+        elif rtype == "max22":
+            # 4550 (הסכם 2001 אישי), per the Progim '4550' sheet: the higher of
+            # 22% × (שכר משולב + הסכם 99) minus the listed deductions, and the
+            # ministry floor (714.7 default; per-ministry overrides) × job%.
+            base = sum(amounts.get(c, 0.0) for c in rule["base_codes"])
+            if base <= 0:
+                continue
+            ded = sum(amounts.get(c, 0.0) for c in rule["deductions"])
+            floor = rule["floors"].get(str(ministry_code or 0),
+                                       rule["floor_default"]) * jp
+            expected = round(max(rule["pct"] * base - ded, floor), 2)
         else:
             # shekel: the component is one of a fixed set of flat amounts, scaled
             # by job%. Expected = the closest admissible amount × job% (e.g.
@@ -706,7 +717,8 @@ def run_engine_full(workers_raw: dict, lookups: dict) -> list:
         )
         result = calculate(worker, lookups)
         # Component checks only make sense on active single-period slips.
-        checks = (check_worker_components(components, worker.job_pct or 1.0, rules)
+        checks = (check_worker_components(components, worker.job_pct or 1.0, rules,
+                                          worker.ministry_code)
                   if result.status in (STATUS_VALID, STATUS_INVALID) else {})
         entries.append({"result": result, "comp_checks": checks})
     # Pass B — self-calibrate rule trust on this file, then attach flags.
