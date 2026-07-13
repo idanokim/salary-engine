@@ -122,6 +122,10 @@ def collect(paths):
             bs = sum((cp.expected or 0.0) for cp in r.components
                      if cp.code in engine.BASE_CODES)
             bc = sum(cp.amount for cp in r.components if cp.calculated)
+            # gap in גמולי השתלמות (slip minus standard), from the gmul flags
+            gmul_diff = round(sum(chk["slip"] - chk["expected"]
+                                  for code, chk in flags.items()
+                                  if code in (667, 897)), 2) or None
             per_emp.append({
                 "month": month, "file": short, "worker_id": r.worker_id,
                 "ministry": r.ministry_name, "darga": r.darga_label,
@@ -129,6 +133,7 @@ def collect(paths):
                 "base_slip": round(bs, 2),
                 "base_calc": round(bc, 2) if bc else None,
                 "base_diff": round(bc - bs, 2) if bc else None,
+                "gmul_diff": gmul_diff,
                 "total_slip": r.expected_total, "total_calc": r.total,
                 "total_diff": r.total_diff, "status": r.status,
                 "flags": "; ".join(
@@ -145,6 +150,7 @@ EMP_COLS = [
     ("darga", "דרגה", 8, None), ("vatek", "ותק", 8, None),
     ("job_pct", "חלקיות", 8, None), ("base_slip", "בסיס בתלוש", 13, MONEY),
     ("base_calc", "בסיס מחושב", 13, MONEY), ("base_diff", "הפרש בסיס", 12, MONEY),
+    ("gmul_diff", "הפרש גמולים", 13, MONEY),
     ("total_slip", "סכום בתלוש", 13, MONEY), ("total_calc", "סכום מחושב", 13, MONEY),
     ("total_diff", "הפרש כולל", 12, MONEY), ("status_he", "סטטוס", 16, None),
     ("flags", "רכיבים חריגים", 30, None), ("diag", "אבחון", 30, None),
@@ -174,7 +180,7 @@ def _emp_sheet(wb, title, rows, table_name, highlight_invalid):
                              else ok_font if st == "valid" else warn_font)
                 if st == "invalid":
                     cell.fill = inv_fill
-            elif key in ("base_diff", "total_diff") and row["status"] == "invalid":
+            elif key in ("base_diff", "gmul_diff", "total_diff") and row["status"] == "invalid":
                 cell.font = inv_font
         if highlight_invalid and row["status"] == "invalid":
             ws.cell(row=r_i, column=1).fill = inv_fill
