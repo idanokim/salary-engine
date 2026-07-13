@@ -187,8 +187,48 @@ def _emp_sheet(wb, title, rows, table_name, highlight_invalid):
     return ws
 
 
+def _anomaly(row):
+    """₪ value of an invalid row's gap (base gap, else total gap)."""
+    v = row["base_diff"] if row["base_diff"] is not None else row["total_diff"]
+    return abs(v or 0.0)
+
+
+def _month_key(m):
+    try:
+        mm, yy = str(m).split("/")
+        return int(yy) * 12 + int(mm)
+    except ValueError:
+        return 0
+
+
+def compute_flips(per_emp):
+    """Workers whose slip flipped valid→invalid between consecutive months."""
+    hist = defaultdict(list)
+    for r in per_emp:
+        hist[r["worker_id"]].append(r)
+    flips = []
+    for rows in hist.values():
+        if len(rows) < 2:
+            continue
+        rows.sort(key=lambda r: _month_key(r["month"]))
+        for prev, cur in zip(rows, rows[1:]):
+            if (prev["status"] == "valid" and cur["status"] == "invalid"
+                    and _month_key(prev["month"]) != _month_key(cur["month"])):
+                flips.append({"id": cur["worker_id"], "ministry": cur["ministry"],
+                              "darga": cur["darga"], "from": prev["month"],
+                              "to": cur["month"], "diff": _anomaly(cur)})
+    return sorted(flips, key=lambda f: -f["diff"])
+
+
 def write_workbook(summary, per_emp, out_path):
     wb = openpyxl.Workbook()
+    anom_by_file = defaultdict(float)
+    anom_total = 0.0
+    for r in per_emp:
+        if r["status"] == "invalid":
+            v = _anomaly(r)
+            anom_by_file[(r["month"], r["file"])] += v
+            anom_total += v
 
     # ---- לוח בקרה ------------------------------------------------------------
     ws = wb.active
@@ -216,40 +256,44 @@ def write_workbook(summary, per_emp, out_path):
     _kpi(ws, 4, 2, 1, "תקינים", tot["valid"], GOOD_TXT, INT)
     _kpi(ws, 4, 3, 1, "שגויים — לבדיקה", tot["invalid"], BAD_TXT, INT)
     _kpi(ws, 4, 4, 1, "% תקינות (פעילים)", acc / 100, GOOD_TXT if acc >= 99 else WARN_TXT, "0.00%")
-    _kpi(ws, 4, 5, 1, "ללא בסיס פעיל", tot["no_base"], WARN_TXT, INT)
-    _kpi(ws, 4, 6, 1, "רטרו / רב-תקופתי", tot["multi"], WARN_TXT, INT)
+    _kpi(ws, 4, 5, 1, "שווי חריגות ₪", round(anom_total), BAD_TXT, INT)
+    _kpi(ws, 4, 6, 1, "ללא בסיס פעיל", tot["no_base"], WARN_TXT, INT)
+    _kpi(ws, 4, 7, 1, "רטרו / רב-תקופתי", tot["multi"], WARN_TXT, INT)
 
     head_r = 7
     labels = ["חודש שכר", "קובץ", "עובדים", "תקין", "שגוי",
-              "ללא בסיס", "רטרו", "% תקינות"]
-    _header_row(ws, head_r, labels, [11, 20, 11, 11, 9, 10, 8, 11])
+              "ללא בסיס", "רטרו", "שווי חריגות ₪", "% תקינות"]
+    _header_row(ws, head_r, labels, [11, 20, 11, 11, 9, 10, 8, 13, 11])
     for i, r in enumerate(summary, start=head_r + 1):
+        anom = round(anom_by_file.get((r["month"], r["file"]), 0.0))
         vals = [r["month"], r["file"], r["workers"], r["valid"], r["invalid"],
-                r["no_base"], r["multi"], r["acc"] / 100]
+                r["no_base"], r["multi"], anom, r["acc"] / 100]
         for c_i, v in enumerate(vals, start=1):
             cell = ws.cell(row=i, column=c_i, value=v)
             cell.border = THIN_BOX
-            if c_i in (3, 4, 5, 6, 7):
+            if c_i in (3, 4, 5, 6, 7, 8):
                 cell.number_format = INT
             if c_i == 4:
                 cell.font = Font(color=GOOD_TXT)
             if c_i == 5 and r["invalid"]:
                 cell.font = Font(color=BAD_TXT, bold=True)
-            if c_i == 8:
+            if c_i == 8 and anom:
+                cell.font = Font(color=BAD_TXT)
+            if c_i == 9:
                 cell.number_format = "0.00%"
     last = head_r + len(summary)
     trow = last + 1
     tvals = ["סה\"כ", "", tot["workers"], tot["valid"], tot["invalid"],
-             tot["no_base"], tot["multi"], acc / 100]
+             tot["no_base"], tot["multi"], round(anom_total), acc / 100]
     for c_i, v in enumerate(tvals, start=1):
         cell = ws.cell(row=trow, column=c_i, value=v)
         cell.font = Font(bold=True)
         cell.border = Border(top=Side(style="double", color=NAVY))
-        if c_i in (3, 4, 5, 6, 7):
+        if c_i in (3, 4, 5, 6, 7, 8):
             cell.number_format = INT
-        if c_i == 8:
+        if c_i == 9:
             cell.number_format = "0.00%"
-    rng = f"H{head_r + 1}:H{last}"
+    rng = f"I{head_r + 1}:I{last}"
     ws.conditional_formatting.add(rng, CellIsRule(
         operator="greaterThanOrEqual", formula=["0.99"],
         font=Font(color=GOOD_TXT), fill=PatternFill("solid", fgColor=GOOD_BG)))
@@ -268,11 +312,30 @@ def write_workbook(summary, per_emp, out_path):
         DataBarRule(start_type="num", start_value=0, end_type="max",
                     color="FFD03B3B", showValue=True))
 
-    # ---- שגויים לבדיקה --------------------------------------------------------
+    # ---- שגויים לבדיקה (ממוין לפי ₪) --------------------------------------------
     inv = [r for r in per_emp if r["status"] == "invalid"]
-    inv.sort(key=lambda r: abs(r["base_diff"] if r["base_diff"] is not None
-                               else (r["total_diff"] or 0)), reverse=True)
+    inv.sort(key=_anomaly, reverse=True)
     _emp_sheet(wb, "שגויים לבדיקה", inv, "Invalids", highlight_invalid=False)
+
+    # ---- שינויי סטטוס בין חודשים -------------------------------------------------
+    flips = compute_flips(per_emp)
+    if flips:
+        wsf = wb.create_sheet("שינויי סטטוס")
+        wsf.sheet_view.rightToLeft = True
+        wsf.freeze_panes = "A2"
+        _header_row(wsf, 1, ["מסד עובד", "משרד", "דרגה", "תקין בחודש",
+                             "שגוי בחודש", "פער ₪"], [12, 22, 8, 12, 12, 12])
+        bad = Font(color=BAD_TXT, bold=True)
+        for i, f in enumerate(flips, start=2):
+            vals = [f["id"], f["ministry"], f["darga"], f["from"], f["to"], f["diff"]]
+            for c_i, v in enumerate(vals, start=1):
+                cell = wsf.cell(row=i, column=c_i, value=v)
+                cell.border = THIN_BOX
+            wsf.cell(row=i, column=1).number_format = INT
+            wsf.cell(row=i, column=6).number_format = MONEY
+            wsf.cell(row=i, column=5).font = bad
+            wsf.cell(row=i, column=6).font = bad
+        wsf.auto_filter.ref = f"A1:F{len(flips) + 1}"
 
     # ---- פר עובד ---------------------------------------------------------------
     _emp_sheet(wb, "פר עובד", per_emp, "PerEmployee", highlight_invalid=True)
