@@ -234,6 +234,37 @@ def extract(xlsm_path: str) -> dict:
             "name": {4983: "גמול מינהל"}.get(code, str(code)),
             "amounts": amounts,
         }
+
+    # השלמות מינימום (sminimum sheet): rows 8+ list every pay code with two
+    # 'כן'/'לא' flags — does it count toward תוספת חוק מינימום (1699, col C)
+    # and toward השלמה לשכר מינימום (5260, col D). The completion itself is
+    # MAX(0, minimum-target − Σ counted), with the seniority component
+    # NEUTRALIZED for 1699 (code 10001 'נטרול ותק': the base counts at
+    # seniority 0). 4544's participation is a per-worker toggle (sheet B3),
+    # so the engine accepts either variant. The minimum target itself is
+    # period-dependent — inferred per file by the engine (modal implied
+    # target), so historical files calibrate themselves.
+    if "sminimum" in wbv.sheetnames:
+        c1699, c5260 = set(), set()
+        for row in wbv["sminimum"].iter_rows(min_row=8, max_row=302,
+                                             values_only=True):
+            if row[0] is None:
+                continue
+            for code in parse_codes(row[0]):
+                if code == 10001:      # נטרול ותק — meta flag, not a pay code
+                    continue
+                if str(row[2]).strip() == "כן":
+                    c1699.add(code)
+                if str(row[3]).strip() == "כן":
+                    c5260.add(code)
+        for code, counted, name in ((1699, c1699, "תוספת חוק מינימום"),
+                                    (5260, c5260, "השלמה לשכר מינימום")):
+            if counted:
+                rules[code] = {
+                    "codes": [code], "type": "minimum", "name": name,
+                    "counted": sorted(counted - {1, 2, 1699, 5260, 10002}),
+                    "toggle_codes": [4544],
+                }
     wbv.close()
     return rules
 
