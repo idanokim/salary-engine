@@ -122,6 +122,15 @@ RATE_FALLBACK_CELLS = {
 }
 
 
+def valid_rate(v):
+    """A pay-percentage is always a fraction in (0, 1). Anything else — a blank,
+    a shekel amount, or a cell the column-layout shifted onto between Progim
+    versions (e.g. 19.17, 405.18) — is not a rate and is rejected. This keeps
+    a re-extraction from any workbook version from ever emitting a garbage rate:
+    it yields a resolvable rate or nothing, never a wrong number."""
+    return isinstance(v, (int, float)) and 0 < float(v) < 1
+
+
 def parse_codes(cell_value):
     """A code cell is either an int or a string like '1037 / 4544' (aliases)."""
     if cell_value is None:
@@ -153,7 +162,7 @@ def extract(xlsm_path: str) -> dict:
         col_codes[letter] = parse_codes(sachar_vals[CODE_ROW - 1][i])
         col_name[letter] = sachar_vals[NAME_ROW - 1][i]
         rate = sachar_vals[RATE_ROW - 1][i]
-        col_rate[letter] = float(rate) if isinstance(rate, (int, float)) and rate else None
+        col_rate[letter] = float(rate) if valid_rate(rate) else None
 
     rules = {}
     for c in range(c0, c1 + 1):
@@ -180,7 +189,7 @@ def extract(xlsm_path: str) -> dict:
             rate = col_rate[letter]
             if rate is None and primary in RATE_FALLBACK_CELLS:
                 v = tosafot.get(RATE_FALLBACK_CELLS[primary])
-                rate = float(v) if isinstance(v, (int, float)) and v else None
+                rate = float(v) if valid_rate(v) else None
             rates = sorted(set(([rate] if rate is not None else [])
                                + HISTORICAL_RATES.get(primary, [])))
             if not rates:
