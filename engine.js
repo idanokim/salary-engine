@@ -191,6 +191,64 @@
     return out;
   }
 
+  // השלמות מינימום — mirror of check_minimum_population in main.py (keep in sync).
+  const MIN_TOLERANCE = 8.0;
+
+  function checkMinimumPopulation(results, rules) {
+    const out = new Map();
+    for (const code of [1699, 5260]) {
+      const rule = rules && rules[code];
+      if (!rule || rule.type !== 'minimum') continue;
+      const counted = new Set(rule.counted);
+      const toggles = rule.toggle_codes || [];
+      const data = new Map(), cand = new Map();
+      const vote = (k) => cand.set(k, (cand.get(k) || 0) + 1);
+      for (let i = 0; i < results.length; i++) {
+        const r = results[i];
+        if (r.status !== STATUS.VALID && r.status !== STATUS.INVALID) continue;
+        const amt = new Map();
+        for (const c of r.components) amt.set(c.code, (amt.get(c.code) || 0) + (c.expected || 0));
+        const v = amt.get(code) || 0;
+        if (v <= 0.01) continue;
+        const job = r.job_pct || 1.0;
+        let yesod = amt.get(CODE_YESOD) || 0;
+        if (yesod <= 0) {
+          if (r.grade_base === null || r.grade_base === undefined) continue;
+          yesod = r.grade_base * job;
+        }
+        let csum = yesod;
+        for (const c of counted) csum += (amt.get(c) || 0);
+        let tog = 0;
+        for (const c of toggles) tog += (amt.get(c) || 0);
+        data.set(i, [v, csum, tog, job]);
+        vote(round((v + csum) / job, 1));
+        if (tog) vote(round((v + csum + tog) / job, 1));
+      }
+      if (data.size < TRUST_MIN_N || !cand.size) continue;
+      let target = null, bn = 0;
+      for (const [k, n] of cand) if (n > bn) { bn = n; target = k; }
+      const evals = new Map();
+      let okValid = 0, nValid = 0;
+      for (const [i, [v, csum, tog, job]] of data) {
+        const e1 = Math.max(0, round(target * job - csum, 2));
+        const e2 = Math.max(0, round(target * job - csum - tog, 2));
+        const exp = Math.abs(e1 - v) <= Math.abs(e2 - v) ? e1 : e2;
+        const good = Math.abs(exp - v) <= MIN_TOLERANCE;
+        evals.set(i, [good, v, exp]);
+        if (results[i].status === STATUS.VALID) { nValid++; if (good) okValid++; }
+      }
+      if (nValid < TRUST_MIN_N || okValid / nValid < TRUST_MIN_MATCH) continue;
+      for (const [i, [good, v, exp]] of evals) {
+        if (good) continue;
+        if (!out.has(i)) out.set(i, {});
+        out.get(i)[code] = { slip: round2(v), expected: exp, diff: round2(exp - v),
+          ok: false, name: rule.name,
+          note: `השלמת מינימום: היעד בקובץ ≈ ${target} למשרה מלאה — הסכום בתלוש אינו משלים אליו` };
+      }
+    }
+    return out;
+  }
+
   function trustedRuleCodes(allChecks, rules) {
     const per = new Map();
     for (const checks of allChecks) {
@@ -430,12 +488,14 @@
     // Pass B — self-calibrate rule trust on this file, then attach flags.
     const trusted = trustedRuleCodes(allChecks, rules);
     const gmulFlags = checkGmulPopulation(results);
+    const minFlags = checkMinimumPopulation(results, rules);
     for (let i = 0; i < results.length; i++) {
       const r = results[i], checks = allChecks[i];
       for (const code in checks) {
         if (trusted.has(code) && !checks[code].ok) r.comp_flags[code] = checks[code];
       }
       Object.assign(r.comp_flags, gmulFlags.get(i) || {});
+      Object.assign(r.comp_flags, minFlags.get(i) || {});
       const flagged = Object.keys(r.comp_flags);
       if (flagged.length) {
         if (r.status === STATUS.VALID) { r.status = STATUS.INVALID; r.total_match = false; }

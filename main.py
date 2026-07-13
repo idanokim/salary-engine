@@ -307,6 +307,78 @@ def check_gmul_population(entries) -> dict:
     return out
 
 
+# השלמות מינימום (1699 / 5260) — MAX(0, יעד − Σ רכיבים נספרים), where the
+# counted set comes from the Progim sminimum sheet, the base counts at
+# seniority 0 (נטרול ותק), and 4544's participation is a per-worker toggle.
+# The minimum target itself is period-dependent, so it is inferred per file:
+# the modal implied target (completion + counted sum, normalized to full
+# time) across the file's own carriers. Tolerance is ₪3 — the expected value
+# is a residual of a ~₪6,000 target minus a sum of many 2-decimal-rounded
+# components, so ±₪1 would flag pure rounding accumulation.
+MIN_TOLERANCE = 8.0
+
+
+def check_minimum_population(entries, rules) -> dict:
+    """Self-calibrated minimum-completion checks. {entry_index: {code: flag}}."""
+    out = {}
+    for code in (1699, 5260):
+        rule = rules.get(code)
+        if not rule or rule.get("type") != "minimum":
+            continue
+        counted = set(rule["counted"])
+        toggles = rule.get("toggle_codes", [])
+        data, cand = {}, Counter()
+        for i, e in enumerate(entries):
+            r = e["result"]
+            if r.status not in (STATUS_VALID, STATUS_INVALID):
+                continue
+            amt = defaultdict(float)
+            for c in r.components:
+                amt[c.code] += (c.expected or 0.0)
+            v = amt.get(code, 0.0)
+            if v <= 0.01:
+                continue
+            job = r.job_pct or 1.0
+            yesod = amt.get(CODE_YESOD, 0.0)
+            if yesod <= 0:
+                if r.grade_base is None:
+                    continue
+                yesod = r.grade_base * job
+            csum = yesod + sum(amt.get(c, 0.0) for c in counted)
+            tog = sum(amt.get(c, 0.0) for c in toggles)
+            data[i] = (v, csum, tog, job)
+            cand[round((v + csum) / job, 1)] += 1
+            if tog:
+                cand[round((v + csum + tog) / job, 1)] += 1
+        if len(data) < TRUST_MIN_N or not cand:
+            continue
+        target = cand.most_common(1)[0][0]
+        evals, ok_valid, n_valid = {}, 0, 0
+        for i, (v, csum, tog, job) in data.items():
+            e1 = max(0.0, round(target * job - csum, 2))
+            e2 = max(0.0, round(target * job - csum - tog, 2))
+            exp = e1 if abs(e1 - v) <= abs(e2 - v) else e2
+            good = abs(exp - v) <= MIN_TOLERANCE
+            evals[i] = (good, v, exp)
+            # Trust is judged on the HEALTHY population: slips whose base
+            # already validated. Broken slips (retro etc.) legitimately fail
+            # this rule too and must not veto it.
+            if entries[i]["result"].status == STATUS_VALID:
+                n_valid += 1
+                ok_valid += good
+        if n_valid < TRUST_MIN_N or ok_valid / n_valid < TRUST_MIN_MATCH:
+            continue  # era/model gap the file doesn't support — suppress
+        for i, (good, v, exp) in evals.items():
+            if good:
+                continue
+            out.setdefault(i, {})[code] = {
+                "slip": round(v, 2), "expected": exp,
+                "diff": round(exp - v, 2), "ok": False, "name": rule["name"],
+                "note": (f"השלמת מינימום: היעד בקובץ ≈ {target} למשרה מלאה — "
+                         "הסכום בתלוש אינו משלים אליו")}
+    return out
+
+
 def trusted_rule_codes(all_checks, rules=None) -> set:
     """Self-calibration: which rule codes hold on this file's own population.
 
@@ -640,10 +712,12 @@ def run_engine_full(workers_raw: dict, lookups: dict) -> list:
     # Pass B — self-calibrate rule trust on this file, then attach flags.
     trusted = trusted_rule_codes([e["comp_checks"] for e in entries], rules)
     gmul_flags = check_gmul_population(entries)
+    min_flags = check_minimum_population(entries, rules)
     for i, e in enumerate(entries):
         flags = {code: chk for code, chk in e["comp_checks"].items()
                  if code in trusted and not chk["ok"]}
         flags.update(gmul_flags.get(i, {}))
+        flags.update(min_flags.get(i, {}))
         e["comp_flags"] = flags
         result = e["result"]
         if flags:
