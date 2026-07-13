@@ -618,16 +618,21 @@
 
   const BATCH_COLUMNS = ['worker_id', 'ministry_code', 'ministry_name', 'droog', 'kod_darga',
     'darga_label', 'vatek', 'job_pct', 'grade_base', 'vatek_mult', 'total_calculated',
-    'total_expected', 'total_diff', 'total_match', 'status', 'flagged_components',
-    'n_components', 'errors'];
+    'total_expected', 'total_diff', 'gmul_diff', 'total_match', 'status',
+    'flagged_components', 'n_components', 'errors'];
 
   function batchRow(r) {
-    const flagged = Object.keys(r.comp_flags || {}).sort()
-      .map((k) => `${k} (${r.comp_flags[k].name}): ${r.comp_flags[k].slip} במקום ${r.comp_flags[k].expected}`)
+    const flags = r.comp_flags || {};
+    const flagged = Object.keys(flags).sort()
+      .map((k) => `${k} (${flags[k].name}): ${flags[k].slip} במקום ${flags[k].expected}`)
       .join('; ');
+    // gap in גמולי השתלמות (slip minus standard), one column like the CLI report
+    let gmulDiff = 0;
+    for (const k of [667, 897]) if (flags[k]) gmulDiff += flags[k].slip - flags[k].expected;
+    gmulDiff = gmulDiff ? round2(gmulDiff) : null;
     return [r.worker_id, r.ministry_code, r.ministry_name, r.droog, r.kod_darga, r.darga_label,
       r.vatek, r.job_pct, r.grade_base, r.vatek_mult, r.total, r.expected_total, r.total_diff,
-      r.total_match, r.status, flagged, r.components.length, ''];
+      gmulDiff, r.total_match, r.status, flagged, r.components.length, ''];
   }
 
   function batchCSV(results) {

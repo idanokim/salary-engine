@@ -1313,18 +1313,18 @@ async function withDlButton(btnId,fn){
 
 // דוח שגויים + dashboard for the two single-file downloads — reuses the shared
 // workbook styling infra (XL palette, fill(), styleHeaderRow, MONEY_FMT/INT_FMT).
-const BATCH_WIDTHS=[12,10,22,7,10,8,8,9,13,10,13,13,12,10,16,34,10,30];
-const BATCH_MONEY=[9,10,11,12,13]; // grade_base..total_diff in BATCH_COLUMNS
+const BATCH_WIDTHS=[12,10,22,7,10,8,8,9,13,10,13,13,12,13,10,16,34,10,30];
+const BATCH_MONEY=[9,10,11,12,13,14]; // grade_base..gmul_diff in BATCH_COLUMNS
 function batchSheet(wb,title,rows){
   const ws=wb.addWorksheet(title,{views:[{rightToLeft:true,state:'frozen',ySplit:1}]});
   styleHeaderRow(ws,SalaryEngine.BATCH_COLUMNS,BATCH_WIDTHS);
   for(const r of rows){
     const row=ws.addRow(SalaryEngine.batchRow(r));
     BATCH_MONEY.forEach(ci=>{ if(typeof row.getCell(ci).value==='number') row.getCell(ci).numFmt=MONEY_FMT; });
-    const st=row.getCell(15);
+    const st=row.getCell(16);
     if(r.status==='valid') st.font={color:{argb:XL.GOODT}};
     else if(r.status==='invalid'){ st.font={bold:true,color:{argb:XL.BADT}};
-      if(typeof row.getCell(13).value==='number') row.getCell(13).font={color:{argb:XL.BADT}}; }
+      for(const ci of [13,14]) if(typeof row.getCell(ci).value==='number') row.getCell(ci).font={color:{argb:XL.BADT}}; }
     else st.font={color:{argb:XL.WARNT}};
   }
   ws.autoFilter={from:{row:1,column:1},to:{row:Math.max(rows.length+1,1),column:SalaryEngine.BATCH_COLUMNS.length}};

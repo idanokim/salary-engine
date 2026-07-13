@@ -830,7 +830,11 @@ def run_batch_entries(excel_path: str, lookups: Optional[dict] = None) -> tuple:
             "vatek": result.vatek_calculated, "job_pct": result.job_pct,
             "grade_base": result.grade_base, "vatek_mult": result.vatek_multiplier,
             "total_calculated": result.total, "total_expected": result.expected_total,
-            "total_diff": result.total_diff, "total_match": result.total_match,
+            "total_diff": result.total_diff,
+            "gmul_diff": (round(sum(chk["slip"] - chk["expected"]
+                                    for code, chk in flags.items()
+                                    if code in (667, 897)), 2) or None),
+            "total_match": result.total_match,
             "status": result.status,
             "flagged_components": "; ".join(
                 f"{code} ({chk['name']}): {chk['slip']} במקום {chk['expected']}"
