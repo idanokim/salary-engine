@@ -93,7 +93,7 @@
     return rules;
   }
 
-  function checkWorkerComponents(rows, jobPct, rules) {
+  function checkWorkerComponents(rows, jobPct, rules, ministryCode) {
     const amounts = new Map();
     for (const r of rows) {
       const code = Number(r.comp_code);
@@ -103,7 +103,7 @@
     const jp = jobPct || 1.0;
     for (const k in rules) {
       const rule = rules[k];
-      if (rule.type !== 'percent' && rule.type !== 'shekel') continue;
+      if (rule.type !== 'percent' && rule.type !== 'shekel' && rule.type !== 'max22') continue;
       let slip = 0;
       for (const c of rule.codes) slip += (amounts.get(c) || 0);
       if (Math.abs(slip) < 0.01) continue;
@@ -116,6 +116,17 @@
         let best = rule.rates[0];
         for (const r of rule.rates) if (Math.abs(base * r - slip) < Math.abs(base * best - slip)) best = r;
         expected = round2(base * best);
+      } else if (rule.type === 'max22') {
+        // 4550: the higher of 22% × (משולב + הסכם 99) minus deductions, and the
+        // ministry floor × job% (Progim '4550' sheet). Self-calibration keeps
+        // this silent on files where the personal/frozen amounts dominate.
+        let base = 0;
+        for (const c of rule.base_codes) base += (amounts.get(c) || 0);
+        if (base <= 0) continue;
+        let ded = 0;
+        for (const c of rule.deductions) ded += (amounts.get(c) || 0);
+        const floor = (rule.floors[String(ministryCode || 0)] || rule.floor_default) * jp;
+        expected = round2(Math.max(rule.pct * base - ded, floor));
       } else {
         // shekel: one of a fixed set of flat amounts × job% (e.g. גמול מינהל
         // 4983 ∈ {105,210,315}). The closest admissible amount is the standard.
@@ -477,7 +488,7 @@
       const r = calculate(lk, rows, wid, plusRemap.get(key));
       r.comp_flags = {};
       const active = r.status === STATUS.VALID || r.status === STATUS.INVALID;
-      const checks = (rules && active) ? checkWorkerComponents(rows, r.job_pct, rules) : {};
+      const checks = (rules && active) ? checkWorkerComponents(rows, r.job_pct, rules, r.ministry_code) : {};
       allChecks.push(checks);
       results.push(r);
     }
