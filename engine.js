@@ -121,6 +121,66 @@
     return checks;
   }
 
+  // גמולי השתלמות — population-calibrated checks (mirror of
+  // check_gmul_population in main.py; keep in sync).
+  const GMUL_A = [647, 667, 4268], GMUL_B = [897, 4269];
+  const GMUL_NOTE = 'חריגה מהערך התקני לקבוצת הדרגה — חשד להפרשי רטרו בתוך הרכיב';
+
+  function checkGmulPopulation(results) {
+    const aVals = new Map(), bGroups = new Map(), per = new Map();
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      if (r.status !== STATUS.VALID && r.status !== STATUS.INVALID) continue;
+      const amt = new Map();
+      for (const c of r.components) amt.set(c.code, (amt.get(c.code) || 0) + (c.expected || 0));
+      const a = GMUL_A.reduce((s, c) => s + (amt.get(c) || 0), 0);
+      const b = GMUL_B.reduce((s, c) => s + (amt.get(c) || 0), 0);
+      let base = 0;
+      for (const c of BASE_CODES) base += (amt.get(c) || 0);
+      const job = r.job_pct || 1.0;
+      per.set(i, [a, b, base, job, r.kod_darga]);
+      if (a > 0.01) {
+        const k = round2(a / job);
+        aVals.set(k, (aVals.get(k) || 0) + 1);
+      }
+      if (b > 0.01) {
+        const g = bGroups.get(r.kod_darga) || new Map();
+        const k = (base > 1 && Math.abs(b - 0.09 * base) <= MATCH_THRESHOLD) ? '9%' : round2(b / job);
+        g.set(k, (g.get(k) || 0) + 1);
+        bGroups.set(r.kod_darga, g);
+      }
+    }
+    const top = (m) => { let bk = null, bn = 0, t = 0; for (const [k, n] of m) { t += n; if (n > bn) { bn = n; bk = k; } } return [bk, bn, t]; };
+    let aMode = null;
+    { const [k, n, t] = top(aVals); if (t >= TRUST_MIN_N && n / t >= TRUST_MIN_MATCH) aMode = k; }
+    const bDom = new Map();
+    for (const [kod, g] of bGroups) {
+      const [k, n, t] = top(g);
+      if (t >= 5 && n / t >= 0.90) bDom.set(kod, k);
+    }
+    const out = new Map();
+    for (const [i, [a, b, base, job, kod]] of per) {
+      const flags = {};
+      if (aMode !== null && a > 0.01) {
+        const exp = round2(aMode * job);
+        if (Math.abs(a - exp) > MATCH_THRESHOLD) {
+          flags[667] = { slip: round2(a), expected: exp, diff: round2(exp - a),
+                         ok: false, name: "גמול השתלמות א'", note: GMUL_NOTE };
+        }
+      }
+      const dom = bDom.get(kod);
+      if (dom !== undefined && b > 0.01) {
+        const exp = dom === '9%' ? round2(0.09 * base) : round2(dom * job);
+        if (Math.abs(b - exp) > MATCH_THRESHOLD) {
+          flags[897] = { slip: round2(b), expected: exp, diff: round2(exp - b),
+                         ok: false, name: "גמול השתלמות ב'", note: GMUL_NOTE };
+        }
+      }
+      if (Object.keys(flags).length) out.set(i, flags);
+    }
+    return out;
+  }
+
   function trustedRuleCodes(allChecks, rules) {
     const per = new Map();
     for (const checks of allChecks) {
@@ -348,11 +408,13 @@
     }
     // Pass B — self-calibrate rule trust on this file, then attach flags.
     const trusted = trustedRuleCodes(allChecks, rules);
+    const gmulFlags = checkGmulPopulation(results);
     for (let i = 0; i < results.length; i++) {
       const r = results[i], checks = allChecks[i];
       for (const code in checks) {
         if (trusted.has(code) && !checks[code].ok) r.comp_flags[code] = checks[code];
       }
+      Object.assign(r.comp_flags, gmulFlags.get(i) || {});
       const flagged = Object.keys(r.comp_flags);
       if (flagged.length) {
         if (r.status === STATUS.VALID) { r.status = STATUS.INVALID; r.total_match = false; }
@@ -459,7 +521,7 @@
       const chk = r.comp_flags[k];
       findings.push({ category: `פער ב${chk.name}`, code: parseInt(k, 10), name: chk.name,
         slip: chk.slip, expected: chk.expected, diff: round2(chk.slip - chk.expected),
-        note: 'לפי נוסחת החוקה (אחוז × סמלי הבסיס בתלוש)' });
+        note: chk.note || 'לפי נוסחת החוקה (אחוז × סמלי הבסיס בתלוש)' });
     }
 
     if (!findings.length) {

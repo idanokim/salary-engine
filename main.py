@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
 from dataclasses import dataclass, field
-from collections import defaultdict
+from collections import defaultdict, Counter
 
 import openpyxl
 from openpyxl import Workbook
@@ -225,6 +225,77 @@ def check_worker_components(components, job_pct, rules) -> dict:
             "name": rule["name"],
         }
     return checks
+
+
+# גמולי השתלמות — checked against the file's own population, per the חוקה gate:
+#   גמול א' (647/667/4268): one flat national amount (328.76 currently) — the
+#     file-wide modal full-time value.
+#   גמול ב' (897/4269): graded by kod_darga — lower grades a flat amount, higher
+#     grades 9% × the base (SACHAR: IF(C2<47→P, C2<53→Q, else 9%)). The dominant
+#     variant of each kod_darga group in the file IS the standard for that grade;
+#     a deviation (e.g. a doubled or off-grid amount) usually means הפרשי רטרו
+#     folded into the component.
+GMUL_A_CODES = (647, 667, 4268)
+GMUL_B_CODES = (897, 4269)
+GMUL_A_NAME = "גמול השתלמות א'"
+GMUL_B_NAME = "גמול השתלמות ב'"
+GMUL_NOTE = "חריגה מהערך התקני לקבוצת הדרגה — חשד להפרשי רטרו בתוך הרכיב"
+
+
+def check_gmul_population(entries) -> dict:
+    """Self-calibrated gmul checks. Returns {entry_index: {code: flag}}."""
+    a_vals, b_groups = Counter(), defaultdict(Counter)
+    per = {}
+    for i, e in enumerate(entries):
+        r = e["result"]
+        if r.status not in (STATUS_VALID, STATUS_INVALID):
+            continue
+        amt = defaultdict(float)
+        for c in r.components:
+            amt[c.code] += (c.expected or 0.0)
+        a = sum(amt[c] for c in GMUL_A_CODES)
+        b = sum(amt[c] for c in GMUL_B_CODES)
+        base = sum(amt[c] for c in BASE_CODES)
+        job = r.job_pct or 1.0
+        per[i] = (a, b, base, job, r.kod_darga)
+        if a > 0.01:
+            a_vals[round(a / job, 2)] += 1
+        if b > 0.01:
+            if base > 1 and abs(b - 0.09 * base) <= MATCH_THRESHOLD:
+                b_groups[r.kod_darga]["9%"] += 1
+            else:
+                b_groups[r.kod_darga][round(b / job, 2)] += 1
+    a_mode, ta = None, sum(a_vals.values())
+    if ta >= TRUST_MIN_N:
+        v, n = a_vals.most_common(1)[0]
+        if n / ta >= TRUST_MIN_MATCH:
+            a_mode = v
+    b_dom = {}
+    for kod, c in b_groups.items():
+        t = sum(c.values())
+        if t >= 5:
+            v, n = c.most_common(1)[0]
+            if n / t >= 0.90:
+                b_dom[kod] = v
+    out = {}
+    for i, (a, b, base, job, kod) in per.items():
+        flags = {}
+        if a_mode is not None and a > 0.01:
+            exp = round(a_mode * job, 2)
+            if abs(a - exp) > MATCH_THRESHOLD:
+                flags[667] = {"slip": round(a, 2), "expected": exp,
+                              "diff": round(exp - a, 2), "ok": False,
+                              "name": GMUL_A_NAME, "note": GMUL_NOTE}
+        dom = b_dom.get(kod)
+        if dom is not None and b > 0.01:
+            exp = round(0.09 * base, 2) if dom == "9%" else round(dom * job, 2)
+            if abs(b - exp) > MATCH_THRESHOLD:
+                flags[897] = {"slip": round(b, 2), "expected": exp,
+                              "diff": round(exp - b, 2), "ok": False,
+                              "name": GMUL_B_NAME, "note": GMUL_NOTE}
+        if flags:
+            out[i] = flags
+    return out
 
 
 def trusted_rule_codes(all_checks, rules=None) -> set:
@@ -542,9 +613,11 @@ def run_engine_full(workers_raw: dict, lookups: dict) -> list:
         entries.append({"result": result, "comp_checks": checks})
     # Pass B — self-calibrate rule trust on this file, then attach flags.
     trusted = trusted_rule_codes([e["comp_checks"] for e in entries], rules)
-    for e in entries:
+    gmul_flags = check_gmul_population(entries)
+    for i, e in enumerate(entries):
         flags = {code: chk for code, chk in e["comp_checks"].items()
                  if code in trusted and not chk["ok"]}
+        flags.update(gmul_flags.get(i, {}))
         e["comp_flags"] = flags
         result = e["result"]
         if flags:
@@ -669,7 +742,8 @@ def diagnose_entry(entry, lookups) -> list:
                          "code": code, "name": chk["name"],
                          "slip": chk["slip"], "expected": chk["expected"],
                          "diff": round(chk["slip"] - chk["expected"], 2),
-                         "note": "לפי נוסחת החוקה (אחוז × סמלי הבסיס בתלוש)"})
+                         "note": chk.get("note",
+                                         "לפי נוסחת החוקה (אחוז × סמלי הבסיס בתלוש)")})
 
     if not findings:
         findings.append({"category": "פער כולל",
