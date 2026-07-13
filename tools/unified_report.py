@@ -80,6 +80,20 @@ def _kpi(ws, row, col, span, title, value, color=None, fmt=None):
             ws.cell(row=r, column=cc).fill = PatternFill("solid", fgColor=TILE_BG)
 
 
+import re
+
+
+def _month_from_name(stem):
+    """MM/YYYY from an MM.YYYY / YYYY.MM pattern in the file name, else the stem."""
+    m = re.search(r"(0?[1-9]|1[0-2])[._/](20\d{2})", stem) or \
+        re.search(r"(20\d{2})[._/](0?[1-9]|1[0-2])", stem)
+    if m:
+        a, b = int(m.group(1)), int(m.group(2))
+        mm, yy = (b, a) if a > 12 else (a, b)
+        return f"{mm:02d}/{yy}"
+    return stem.split("-", 1)[-1][:12] or stem[:12]
+
+
 def pay_month_of(path):
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
     ws = wb[wb.sheetnames[0]]
@@ -103,7 +117,7 @@ def collect(paths):
     summary, per_emp = [], []
     for path in files:
         d = pay_month_of(path)
-        month = d.strftime("%m/%Y") if d else Path(path).stem[:12]
+        month = d.strftime("%m/%Y") if d else _month_from_name(Path(path).stem)
         short = Path(path).stem.split("-", 1)[-1][:20] or Path(path).stem[:20]
         workers = engine.load_golmi(path)
         entries = engine.run_engine_full(workers, lookups)
