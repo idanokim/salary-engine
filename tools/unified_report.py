@@ -130,9 +130,15 @@ def _progim_delta(entry, raw_first, rules):
         notes.append(f"ותק קטוע בקובץ: {raw_vatek} תוקן ל-{r.vatek_calculated} "
                      "(ה-Progim מניח ותק מדויק; הקובץ חותך לשתי ספרות)")
     raw_darga = str(raw_first[5] or "").strip()
-    if raw_darga and r.darga_label and raw_darga != str(r.darga_label):
-        notes.append(f"תווית דרגה נורמלה: '{raw_darga}' ← '{r.darga_label}' "
-                     "(פלוס-לפני / קוד-דרגה; ה-Progim דורש תווית מדויקת)")
+    if (raw_darga and r.darga_label and raw_darga != str(r.darga_label)
+            and engine.normalize_grade_label(raw_darga)
+                != engine.normalize_grade_label(r.darga_label)):
+        # A bare '+' reposition ('+18'→'18+') is NOT a difference — the Progim
+        # resolves both spellings, so we stay silent. Only note a genuine
+        # reinterpretation: a קוד-דרגה promoted to its '+' grade by the file's
+        # own vote (the labels still differ after normalization).
+        notes.append(f"דרגה פורשה כ-'{r.darga_label}' במקום '{raw_darga}' "
+                     "(קוד-דרגה קודם לדרגת ה-'+' לפי הצבעת התלושים בקובץ)")
     if r.status == "valid":
         bs = sum(amt[c] for c in engine.BASE_CODES)
         bc = sum(cp.amount for cp in r.components if cp.calculated)

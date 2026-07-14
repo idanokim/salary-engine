@@ -1136,8 +1136,13 @@ function progimDelta(r, rawFirst, rules){
   if(Math.abs((r.vatek||0)-rawVatek)>1e-9)
     notes.push(`ותק קטוע בקובץ: ${rawVatek} תוקן ל-${r.vatek} (ה-Progim מניח ותק מדויק; הקובץ חותך לשתי ספרות)`);
   const rawDarga=String((rawFirst&&rawFirst.darga_label)||'').trim();
-  if(rawDarga && r.darga_label && rawDarga!==String(r.darga_label))
-    notes.push(`תווית דרגה נורמלה: '${rawDarga}' ← '${r.darga_label}' (פלוס-לפני / קוד-דרגה; ה-Progim דורש תווית מדויקת)`);
+  // A bare '+' reposition ('+18'→'18+') is NOT a difference — the Progim
+  // resolves both spellings, so stay silent. Only note a genuine
+  // reinterpretation: a קוד-דרגה promoted to its '+' grade by the file's own
+  // vote (labels still differ after normalization).
+  if(rawDarga && r.darga_label && rawDarga!==String(r.darga_label)
+     && SalaryEngine.normalizeGradeLabel(rawDarga)!==SalaryEngine.normalizeGradeLabel(r.darga_label))
+    notes.push(`דרגה פורשה כ-'${r.darga_label}' במקום '${rawDarga}' (קוד-דרגה קודם לדרגת ה-'+' לפי הצבעת התלושים בקובץ)`);
   if(r.status==='valid'){
     let bs=0,bc=0;
     for(const c of r.components){ if(c.code===1||c.code===2||c.code===10002) bs+=(c.expected||0); if(c.calculated) bc+=(c.amount||0);}
