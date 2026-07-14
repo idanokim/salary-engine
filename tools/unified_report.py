@@ -160,10 +160,29 @@ def _progim_delta(entry, raw_first, rules):
     return "; ".join(notes)
 
 
+def _gap_reason(code, rules):
+    """Short Hebrew 'why' for a gap on a pay code — for the per-code breakdown."""
+    if code == "בסיס":
+        return "שכר הבסיס אינו תואם — שינוי ותק/דרגה או חודש חלקי"
+    if code in (667, 897):
+        return "חריגה מהערך התקני לקבוצת הדרגה (חשד להפרשי רטרו)"
+    t = (rules.get(code) or {}).get("type")
+    if t == "shekel":
+        return "סכום קבוע מחוץ לטבלת הערכים הרשמית"
+    if t == "max22":
+        return "חריגה מנוסחת 4550 (הגבוה מבין 22% למינימום)"
+    if t == "percent":
+        return "האחוז או בסיס-החישוב אינם תואמים את החוקה"
+    if code in (5402, 5524):
+        return "סכום שקלי החורג מנורמת קבוצת הדרגה בקובץ"
+    return "סטייה מהערך התקני של הרכיב"
+
+
 def collect(paths):
-    """Run the engine per file; return (summary rows, per-employee rows)."""
+    """Run the engine per file; return (summary, per_emp, code_gaps)."""
     lookups = engine.get_lookups()
     rules = engine.get_rules()
+    code_gaps = {}   # code -> {"name", "count", "sum"}
     files = sorted(paths, key=lambda p: (pay_month_of(p) or datetime(2099, 1, 1),
                                          Path(p).name))
     summary, per_emp = [], []
@@ -215,6 +234,18 @@ def collect(paths):
                     err_cat = "brich"
                 else:
                     err_cat = "real"
+                # Per-code gap tally for the exec dashboard: base (when off) plus
+                # every flagged component, each with its ₪ magnitude.
+                def _bump(code, name, amt):
+                    g = code_gaps.setdefault(code, {"name": name, "count": 0, "sum": 0.0})
+                    g["count"] += 1
+                    g["sum"] += abs(amt or 0.0)
+                    if name:
+                        g["name"] = name
+                if base_diff is not None and abs(base_diff) > 1.0:
+                    _bump("בסיס", "שכר בסיס", base_diff)
+                for k, v in flags.items():
+                    _bump(k, v["name"], v["slip"] - v["expected"])
             per_emp.append({
                 "month": month, "file": short, "worker_id": r.worker_id,
                 "ministry": r.ministry_name, "darga": r.darga_label,
@@ -249,7 +280,12 @@ def collect(paths):
         ft_active = s["ft_valid"] + sum(s[k] for k in
                                         ("inv_base", "inv_gmul", "inv_brich", "inv_real"))
         s["real_pct"] = round(s["inv_real"] / ft_active * 100, 2) if ft_active else 0.0
-    return summary, per_emp
+    code_gap_list = sorted(
+        ({"code": code, "name": g["name"], "count": g["count"],
+          "sum": round(g["sum"], 2), "reason": _gap_reason(code, rules)}
+         for code, g in code_gaps.items()),
+        key=lambda x: -x["count"])
+    return summary, per_emp, code_gap_list
 
 
 # (key, header, width, number-format, is-gap-cell). Gap cells are red-tinted
@@ -341,7 +377,7 @@ def compute_flips(per_emp):
     return sorted(flips, key=lambda f: -f["diff"])
 
 
-def write_workbook(summary, per_emp, out_path):
+def write_workbook(summary, per_emp, out_path, code_gaps=None):
     wb = openpyxl.Workbook()
     anom_by_file = defaultdict(float)
     anom_total = 0.0
@@ -453,6 +489,35 @@ def write_workbook(summary, per_emp, out_path):
         f"J{head_r + 1}:J{last}",
         DataBarRule(start_type="num", start_value=0, end_type="max",
                     color="FFD03B3B", showValue=True))
+
+    # ---- פערים לפי סמל שכר (a second table, to the right of the per-file one) ---
+    if code_gaps:
+        cbase = 12   # column L
+        heads = ["סמל", "שם רכיב", "כמות פערים", "שווי ₪", "הסיבה לפער"]
+        widths = [9, 22, 12, 13, 40]
+        for j, (h, w) in enumerate(zip(heads, widths)):
+            c = ws.cell(row=head_r, column=cbase + j, value=h)
+            c.font = Font(bold=True, color=NAVY_TEXT, size=11)
+            c.fill = PatternFill("solid", fgColor=NAVY)
+            c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            c.border = THIN_BOX
+            ws.column_dimensions[get_column_letter(cbase + j)].width = w
+        cl = ws.cell(row=head_r - 1, column=cbase, value="פערים לפי סמל שכר — כמה וסיבה")
+        cl.font = Font(bold=True, size=12, color=NAVY)
+        for gi, g in enumerate(code_gaps, start=head_r + 1):
+            vals = [g["code"], g["name"], g["count"], round(g["sum"]), g["reason"]]
+            for j, v in enumerate(vals):
+                cell = ws.cell(row=gi, column=cbase + j, value=v)
+                cell.border = THIN_BOX
+                if j in (2, 3):
+                    cell.number_format = INT
+                if j == 2 and g["count"]:
+                    cell.font = Font(bold=True, color=BAD_TXT)
+        gl = head_r + len(code_gaps)
+        ws.conditional_formatting.add(
+            f"{get_column_letter(cbase + 2)}{head_r + 1}:{get_column_letter(cbase + 2)}{gl}",
+            DataBarRule(start_type="num", start_value=0, end_type="max",
+                        color="FFD03B3B", showValue=True))
 
     # ---- שגויים לבדיקה (ממוין לפי ₪) --------------------------------------------
     inv = [r for r in per_emp if r["status"] == "invalid"
@@ -612,9 +677,9 @@ def main_cli():
     ap.add_argument("--out", default="unified.xlsx")
     args = ap.parse_args()
     t0 = time.time()
-    summary, per_emp = collect(args.files)
+    summary, per_emp, code_gaps = collect(args.files)
     print(f"עיבוד: {time.time() - t0:.0f}ש · כותב workbook ({len(per_emp):,} שורות)...")
-    write_workbook(summary, per_emp, args.out)
+    write_workbook(summary, per_emp, args.out, code_gaps)
     inv = sum(1 for r in per_emp if r["status"] == "invalid")
     print(f"נכתב: {args.out} · {len(per_emp):,} רשומות · {inv:,} שגויים")
 
