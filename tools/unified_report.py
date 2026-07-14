@@ -109,9 +109,61 @@ def pay_month_of(path):
     return month
 
 
+# Current-workbook rates (Progim 13.07.2026). When a slip legitimately matched
+# an EARLIER official rate, that is a difference between the software and the
+# workbook — the Progim only knows the current rate; the software carries the
+# agreements' historical phase-ins.
+CURRENT_RATES = {4544: 0.036, 4934: 0.05, 4994: 0.0725, 5401: 0.03875,
+                 5216: 0.08, 741: 0.30, 5533: 0.05}
+
+
+def _progim_delta(entry, raw_first, rules):
+    """Why the software's verdict differs from a plain current-Progim run —
+    one worker's notes, joined. Empty when the two agree exactly."""
+    r = entry["result"]
+    notes = []
+    amt = defaultdict(float)
+    for cp in r.components:
+        amt[cp.code] += (cp.expected or 0.0)
+    raw_vatek = float(raw_first[6] or 0)
+    if abs((r.vatek_calculated or 0) - raw_vatek) > 1e-9:
+        notes.append(f"ותק קטוע בקובץ: {raw_vatek} תוקן ל-{r.vatek_calculated} "
+                     "(ה-Progim מניח ותק מדויק; הקובץ חותך לשתי ספרות)")
+    raw_darga = str(raw_first[5] or "").strip()
+    if raw_darga and r.darga_label and raw_darga != str(r.darga_label):
+        notes.append(f"תווית דרגה נורמלה: '{raw_darga}' ← '{r.darga_label}' "
+                     "(פלוס-לפני / קוד-דרגה; ה-Progim דורש תווית מדויקת)")
+    if r.status == "valid":
+        bs = sum(amt[c] for c in engine.BASE_CODES)
+        bc = sum(cp.amount for cp in r.components if cp.calculated)
+        if bc and abs(bc - bs) > 1.0:
+            notes.append(f"הבסיס אושר דרך חלון עיגול הוותק (±0.125 שנה) — "
+                         f"חישוב נקודתי כמו ב-Progim היה מראה פער {round(bc - bs, 2)} ₪")
+    job = r.job_pct or 1.0
+    for code, cur in CURRENT_RATES.items():
+        rule = rules.get(code)
+        if not rule or rule.get("type") != "percent":
+            continue
+        slip = sum(amt[c] for c in rule["codes"])
+        if slip <= 0.01:
+            continue
+        base = sum(amt[c] for c in rule["base_codes"])
+        base += rule.get("base_const", 0.0) * job
+        if base <= 0:
+            continue
+        rate = slip / base
+        matched = any(abs(base * rr - slip) <= 1.0 for rr in rule["rates"])
+        if matched and abs(rate - cur) > 0.0015:
+            notes.append(f"סמל {code}: שולם לפי אחוז תקופתי {rate * 100:.2f}% — "
+                         f"בחוברת הנוכחית {cur * 100:.2f}% (ה-Progim מכיר רק את "
+                         "האחוז הנוכחי; התוכנה מכירה את כל הפעימות)")
+    return "; ".join(notes)
+
+
 def collect(paths):
     """Run the engine per file; return (summary rows, per-employee rows)."""
     lookups = engine.get_lookups()
+    rules = engine.get_rules()
     files = sorted(paths, key=lambda p: (pay_month_of(p) or datetime(2099, 1, 1),
                                          Path(p).name))
     summary, per_emp = [], []
@@ -132,7 +184,8 @@ def collect(paths):
         })
         print(f"  {month}  {len(workers):>7,} עובדים · שגויים {c['invalid']:>5,} "
               f"· {summary[-1]['acc']:.2f}%  ({short})")
-        for e in entries:
+        raw_firsts = [rows[0] for rows in workers.values()]
+        for e, raw_first in zip(entries, raw_firsts):
             r, flags = e["result"], e["comp_flags"]
             bs = sum((cp.expected or 0.0) for cp in r.components
                      if cp.code in engine.BASE_CODES)
@@ -178,6 +231,7 @@ def collect(paths):
                     f"{k} ({v['name']}): {v['slip']} במקום {v['expected']}"
                     for k, v in sorted(flags.items())),
                 "diag": "; ".join(r.errors),
+                "progim_delta": _progim_delta(e, raw_first, rules),
             })
         # Full-time breakdown for the dashboard: part-timers are neutralized,
         # and each invalid full-timer lands in exactly ONE bucket (base >
@@ -211,6 +265,7 @@ EMP_COLS = [
     ("total_slip", "סכום בתלוש", 13, MONEY, False), ("total_calc", "סכום מחושב", 13, MONEY, False),
     ("total_diff", "הפרש כולל", 12, MONEY, True), ("status_he", "סטטוס", 16, None, False),
     ("flags", "רכיבים חריגים", 30, None, False), ("diag", "אבחון", 30, None, False),
+    ("progim_delta", "שוני מול Progim — והסבר", 42, None, False),
 ]
 
 
