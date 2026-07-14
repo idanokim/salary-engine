@@ -123,6 +123,7 @@ def collect(paths):
         entries = engine.run_engine_full(workers, lookups)
         c = Counter(e["result"].status for e in entries)
         active = c["valid"] + c["invalid"]
+        file_start = len(per_emp)   # breakdown is computed after the rows below
         summary.append({
             "month": month, "file": short, "workers": len(workers),
             "valid": c["valid"], "invalid": c["invalid"],
@@ -142,22 +143,35 @@ def collect(paths):
                       if 667 in flags else None)
             gmul_b = (round(flags[897]["slip"] - flags[897]["expected"], 2)
                       if 897 in flags else None)
-            # "סכום מחושב" must reflect the CORRECTED total: the recomputed base
-            # plus the rulebook-correct value of every flagged component. Without
-            # the component correction, a slip whose base matches but whose
-            # תוספת is wrong would show computed == slip (identical columns) even
-            # though the engine found a real gap.
-            comp_corr = sum(chk["diff"] for chk in flags.values())  # expected - slip
-            total_calc = round(r.total + comp_corr, 2)
-            total_diff = round(total_calc - (r.expected_total or 0.0), 2)
+            gap_798 = (round(flags[798]["slip"] - flags[798]["expected"], 2)
+                       if 798 in flags else None)
+            # result.total/total_diff already include every flagged component's
+            # correction (folded in by the engine) — use them as-is.
+            total_calc = round(r.total, 2)
+            total_diff = round(r.total_diff or 0.0, 2)
+            base_diff = round(bc - bs, 2) if bc else None
+            # Error category, deduplicated by priority: a worker with both a
+            # base gap and a gmul gap counts once, under the base bucket.
+            err_cat = None
+            if r.status == "invalid":
+                if base_diff is not None and abs(base_diff) > 1.0:
+                    err_cat = "base"
+                elif 667 in flags or 897 in flags:
+                    err_cat = "gmul"
+                elif 798 in flags:
+                    err_cat = "brich"
+                else:
+                    err_cat = "real"
             per_emp.append({
                 "month": month, "file": short, "worker_id": r.worker_id,
                 "ministry": r.ministry_name, "darga": r.darga_label,
                 "vatek": r.vatek_calculated, "job_pct": r.job_pct,
+                "full_time": (r.job_pct or 1.0) >= 0.999,
+                "err_cat": err_cat,
                 "base_slip": round(bs, 2),
                 "base_calc": round(bc, 2) if bc else None,
-                "base_diff": round(bc - bs, 2) if bc else None,
-                "gmul_a": gmul_a, "gmul_b": gmul_b,
+                "base_diff": base_diff,
+                "gmul_a": gmul_a, "gmul_b": gmul_b, "gap_798": gap_798,
                 "total_slip": r.expected_total, "total_calc": total_calc,
                 "total_diff": total_diff, "status": r.status,
                 "flags": "; ".join(
@@ -165,6 +179,22 @@ def collect(paths):
                     for k, v in sorted(flags.items())),
                 "diag": "; ".join(r.errors),
             })
+        # Full-time breakdown for the dashboard: part-timers are neutralized,
+        # and each invalid full-timer lands in exactly ONE bucket (base >
+        # gmul > דריכות > אמיתי) so the buckets never double-count.
+        rows_f = per_emp[file_start:]
+        ft = [x for x in rows_f if x["full_time"]]
+        s = summary[-1]
+        s["part_time"] = len(rows_f) - len(ft)
+        s["ft"] = len(ft)
+        s["ft_valid"] = sum(1 for x in ft if x["status"] == "valid")
+        for cat, key in (("base", "inv_base"), ("gmul", "inv_gmul"),
+                         ("brich", "inv_brich"), ("real", "inv_real")):
+            s[key] = sum(1 for x in ft
+                         if x["status"] == "invalid" and x["err_cat"] == cat)
+        ft_active = s["ft_valid"] + sum(s[k] for k in
+                                        ("inv_base", "inv_gmul", "inv_brich", "inv_real"))
+        s["real_pct"] = round(s["inv_real"] / ft_active * 100, 2) if ft_active else 0.0
     return summary, per_emp
 
 
@@ -177,6 +207,7 @@ EMP_COLS = [
     ("job_pct", "חלקיות", 8, None, False), ("base_slip", "בסיס בתלוש", 13, MONEY, False),
     ("base_calc", "בסיס מחושב", 13, MONEY, False), ("base_diff", "הפרש בסיס", 12, MONEY, True),
     ("gmul_a", "פער גמול א'", 12, MONEY, True), ("gmul_b", "פער גמול ב'", 12, MONEY, True),
+    ("gap_798", "פער דריכות בי\"ח", 13, MONEY, True),
     ("total_slip", "סכום בתלוש", 13, MONEY, False), ("total_calc", "סכום מחושב", 13, MONEY, False),
     ("total_diff", "הפרש כולל", 12, MONEY, True), ("status_he", "סטטוס", 16, None, False),
     ("flags", "רכיבים חריגים", 30, None, False), ("diag", "אבחון", 30, None, False),
@@ -289,66 +320,88 @@ def write_workbook(summary, per_emp, out_path):
     acc = round(tot["valid"] / active * 100, 2) if active else 0.0
     _kpi(ws, 4, 1, 1, "סה\"כ עובדים", tot["workers"], fmt=INT)
     _kpi(ws, 4, 2, 1, "תקינים", tot["valid"], GOOD_TXT, INT)
-    _kpi(ws, 4, 3, 1, "שגויים — לבדיקה", tot["invalid"], BAD_TXT, INT)
-    _kpi(ws, 4, 4, 1, "% תקינות (פעילים)", acc / 100, GOOD_TXT if acc >= 99 else WARN_TXT, "0.00%")
+    for k in ("part_time", "ft", "ft_valid", "inv_base", "inv_gmul",
+              "inv_brich", "inv_real"):
+        tot[k] = sum(r.get(k, 0) for r in summary)
+    _ft_active = (tot["ft_valid"] + tot["inv_base"] + tot["inv_gmul"]
+                  + tot["inv_brich"] + tot["inv_real"])
+    _real_pct = (tot["inv_real"] / _ft_active) if _ft_active else 0.0
+    _kpi(ws, 4, 3, 1, "שגויים אמיתיים (מלאה)", tot["inv_real"], BAD_TXT, INT)
+    _kpi(ws, 4, 4, 1, "% שגויים אמיתיים", _real_pct,
+         GOOD_TXT if _real_pct <= 0.01 else BAD_TXT, "0.00%")
     _kpi(ws, 4, 5, 1, "שווי חריגות ₪", round(anom_total), BAD_TXT, INT)
     _kpi(ws, 4, 6, 1, "ללא בסיס פעיל", tot["no_base"], WARN_TXT, INT)
     _kpi(ws, 4, 7, 1, "רטרו / רב-תקופתי", tot["multi"], WARN_TXT, INT)
 
     head_r = 7
-    labels = ["חודש שכר", "קובץ", "עובדים", "תקין", "שגוי",
-              "ללא בסיס", "רטרו", "שווי חריגות ₪", "% תקינות"]
-    _header_row(ws, head_r, labels, [11, 20, 11, 11, 9, 10, 8, 13, 11])
+    # Per the review flow: part-timers are neutralized first, then each invalid
+    # full-timer counts once — base, then gmul, then דריכות; what remains is the
+    # REAL error count ("המספר האמיתי של השגויים").
+    labels = ["חודש שכר", "קובץ", "עובדים", "משרה חלקית", "משרה מלאה", "תקין (מלאה)",
+              "שגויי בסיס", "שגויי גמול", "שגויי דריכות", "שגויים אמיתיים",
+              "ללא בסיס", "רטרו", "% שגויים אמיתיים"]
+    _header_row(ws, head_r, labels, [11, 18, 10, 10, 10, 11, 10, 10, 10, 12, 9, 8, 13])
     for i, r in enumerate(summary, start=head_r + 1):
-        anom = round(anom_by_file.get((r["month"], r["file"]), 0.0))
-        vals = [r["month"], r["file"], r["workers"], r["valid"], r["invalid"],
-                r["no_base"], r["multi"], anom, r["acc"] / 100]
+        vals = [r["month"], r["file"], r["workers"], r.get("part_time", 0),
+                r.get("ft", 0), r.get("ft_valid", 0), r.get("inv_base", 0),
+                r.get("inv_gmul", 0), r.get("inv_brich", 0), r.get("inv_real", 0),
+                r["no_base"], r["multi"], r.get("real_pct", 0.0) / 100]
         for c_i, v in enumerate(vals, start=1):
             cell = ws.cell(row=i, column=c_i, value=v)
             cell.border = THIN_BOX
-            if c_i in (3, 4, 5, 6, 7, 8):
+            if 3 <= c_i <= 12:
                 cell.number_format = INT
-            if c_i == 4:
+            if c_i == 6:
                 cell.font = Font(color=GOOD_TXT)
-            if c_i == 5 and r["invalid"]:
+            if c_i in (7, 8, 9) and v:
+                cell.font = Font(color=WARN_TXT)
+            if c_i == 10 and v:
                 cell.font = Font(color=BAD_TXT, bold=True)
-            if c_i == 8 and anom:
-                cell.font = Font(color=BAD_TXT)
-            if c_i == 9:
+            if c_i == 13:
                 cell.number_format = "0.00%"
     last = head_r + len(summary)
     trow = last + 1
-    tvals = ["סה\"כ", "", tot["workers"], tot["valid"], tot["invalid"],
-             tot["no_base"], tot["multi"], round(anom_total), acc / 100]
+    for k in ("part_time", "ft", "ft_valid", "inv_base", "inv_gmul",
+              "inv_brich", "inv_real"):
+        tot[k] = sum(r.get(k, 0) for r in summary)
+    tot_active = tot["ft_valid"] + tot["inv_base"] + tot["inv_gmul"] + \
+        tot["inv_brich"] + tot["inv_real"]
+    real_pct_tot = (tot["inv_real"] / tot_active) if tot_active else 0.0
+    tvals = ["סה\"כ", "", tot["workers"], tot["part_time"], tot["ft"],
+             tot["ft_valid"], tot["inv_base"], tot["inv_gmul"], tot["inv_brich"],
+             tot["inv_real"], tot["no_base"], tot["multi"], real_pct_tot]
     for c_i, v in enumerate(tvals, start=1):
         cell = ws.cell(row=trow, column=c_i, value=v)
         cell.font = Font(bold=True)
         cell.border = Border(top=Side(style="double", color=NAVY))
-        if c_i in (3, 4, 5, 6, 7, 8):
+        if 3 <= c_i <= 12:
             cell.number_format = INT
-        if c_i == 9:
+        if c_i == 13:
             cell.number_format = "0.00%"
-    rng = f"I{head_r + 1}:I{last}"
+        if c_i == 10:
+            cell.font = Font(bold=True, color=BAD_TXT)
+    rng = f"M{head_r + 1}:M{last}"
     ws.conditional_formatting.add(rng, CellIsRule(
-        operator="greaterThanOrEqual", formula=["0.99"],
+        operator="lessThanOrEqual", formula=["0.01"],
         font=Font(color=GOOD_TXT), fill=PatternFill("solid", fgColor=GOOD_BG)))
     ws.conditional_formatting.add(rng, CellIsRule(
-        operator="between", formula=["0.95", "0.9899"],
+        operator="between", formula=["0.0101", "0.05"],
         font=Font(color=WARN_TXT), fill=PatternFill("solid", fgColor=WARN_BG)))
     ws.conditional_formatting.add(rng, CellIsRule(
-        operator="lessThan", formula=["0.95"],
+        operator="greaterThan", formula=["0.05"],
         font=Font(color=BAD_TXT), fill=PatternFill("solid", fgColor=BAD_BG)))
     ws.conditional_formatting.add(
         f"C{head_r + 1}:C{last}",
         DataBarRule(start_type="num", start_value=0, end_type="max",
                     color=BAR_BLUE, showValue=True))
     ws.conditional_formatting.add(
-        f"E{head_r + 1}:E{last}",
+        f"J{head_r + 1}:J{last}",
         DataBarRule(start_type="num", start_value=0, end_type="max",
                     color="FFD03B3B", showValue=True))
 
     # ---- שגויים לבדיקה (ממוין לפי ₪) --------------------------------------------
-    inv = [r for r in per_emp if r["status"] == "invalid"]
+    inv = [r for r in per_emp if r["status"] == "invalid"
+           and r["full_time"] and r["err_cat"] == "real"]
     inv.sort(key=_anomaly, reverse=True)
     _emp_sheet(wb, "שגויים לבדיקה", inv, "Invalids", highlight_invalid=False)
 
