@@ -217,13 +217,16 @@ def collect(paths):
                       if 897 in flags else None)
             gap_798 = (round(flags[798]["slip"] - flags[798]["expected"], 2)
                        if 798 in flags else None)
+            gap_4983 = (round(flags[4983]["slip"] - flags[4983]["expected"], 2)
+                        if 4983 in flags else None)
             # result.total/total_diff already include every flagged component's
             # correction (folded in by the engine) — use them as-is.
             total_calc = round(r.total, 2)
             total_diff = round(r.total_diff or 0.0, 2)
             base_diff = round(bc - bs, 2) if bc else None
-            # Error category, deduplicated by priority: a worker with both a
-            # base gap and a gmul gap counts once, under the base bucket.
+            # Error category, deduplicated by priority: a worker with several
+            # gaps counts once, under the first bucket in this order — so
+            # neutralizing each known cause leaves only the true unknowns.
             err_cat = None
             if r.status == "invalid":
                 if base_diff is not None and abs(base_diff) > 1.0:
@@ -232,6 +235,8 @@ def collect(paths):
                     err_cat = "gmul"
                 elif 798 in flags:
                     err_cat = "brich"
+                elif 4983 in flags:
+                    err_cat = "mnhal"
                 else:
                     err_cat = "real"
                 # Per-code gap tally for the exec dashboard: base (when off) plus
@@ -256,6 +261,7 @@ def collect(paths):
                 "base_calc": round(bc, 2) if bc else None,
                 "base_diff": base_diff,
                 "gmul_a": gmul_a, "gmul_b": gmul_b, "gap_798": gap_798,
+                "gap_4983": gap_4983,
                 "total_slip": r.expected_total, "total_calc": total_calc,
                 "total_diff": total_diff, "status": r.status,
                 "flags": "; ".join(
@@ -274,11 +280,12 @@ def collect(paths):
         s["ft"] = len(ft)
         s["ft_valid"] = sum(1 for x in ft if x["status"] == "valid")
         for cat, key in (("base", "inv_base"), ("gmul", "inv_gmul"),
-                         ("brich", "inv_brich"), ("real", "inv_real")):
+                         ("brich", "inv_brich"), ("mnhal", "inv_mnhal"),
+                         ("real", "inv_real")):
             s[key] = sum(1 for x in ft
                          if x["status"] == "invalid" and x["err_cat"] == cat)
-        ft_active = s["ft_valid"] + sum(s[k] for k in
-                                        ("inv_base", "inv_gmul", "inv_brich", "inv_real"))
+        ft_active = s["ft_valid"] + sum(
+            s[k] for k in ("inv_base", "inv_gmul", "inv_brich", "inv_mnhal", "inv_real"))
         s["real_pct"] = round(s["inv_real"] / ft_active * 100, 2) if ft_active else 0.0
     code_gap_list = sorted(
         ({"code": code, "name": g["name"], "count": g["count"],
@@ -298,6 +305,7 @@ EMP_COLS = [
     ("base_calc", "בסיס מחושב", 13, MONEY, False), ("base_diff", "הפרש בסיס", 12, MONEY, True),
     ("gmul_a", "פער גמול א'", 12, MONEY, True), ("gmul_b", "פער גמול ב'", 12, MONEY, True),
     ("gap_798", "פער דריכות בי\"ח", 13, MONEY, True),
+    ("gap_4983", "פער גמול מנהל", 12, MONEY, True),
     ("total_slip", "סכום בתלוש", 13, MONEY, False), ("total_calc", "סכום מחושב", 13, MONEY, False),
     ("total_diff", "הפרש כולל", 12, MONEY, True), ("status_he", "סטטוס", 16, None, False),
     ("flags", "רכיבים חריגים", 30, None, False), ("diag", "אבחון", 30, None, False),
@@ -392,15 +400,17 @@ def write_workbook(summary, per_emp, out_path, code_gaps=None):
     ws.title = "לוח בקרה"
     ws.sheet_view.rightToLeft = True
     ws.sheet_view.showGridLines = False
-    ws.merge_cells("A1:H1")
+    ws.merge_cells("A1:N1")
     t = ws["A1"]
     t.value = "בדיקת התאמת תלושים — דוח מאוחד"
     t.font = Font(size=16, bold=True, color=NAVY)
-    ws.merge_cells("A2:H2")
+    ws.merge_cells("A2:N2")
     s = ws["A2"]
     s.value = (f"{len(summary)} קבצים · הופק "
                f"{datetime.now().strftime('%d/%m/%Y %H:%M')} · "
-               "תלוש תקין = הפרש עד ₪1 מהחישוב לפי טבלאות השכר")
+               "מנטרל: משרה חלקית ← בסיס ← גמול השתלמות ← דריכות בי\"ח ← "
+               "גמול מנהל. הנותר = שגיאה אמיתית לתיקון. (רטרו רב-תקופתי = "
+               "מחוץ לשרשרת)")
     s.font = Font(size=10, color=MUTED)
 
     tot = Counter()
@@ -412,10 +422,10 @@ def write_workbook(summary, per_emp, out_path, code_gaps=None):
     _kpi(ws, 4, 1, 1, "סה\"כ עובדים", tot["workers"], fmt=INT)
     _kpi(ws, 4, 2, 1, "תקינים", tot["valid"], GOOD_TXT, INT)
     for k in ("part_time", "ft", "ft_valid", "inv_base", "inv_gmul",
-              "inv_brich", "inv_real"):
+              "inv_brich", "inv_mnhal", "inv_real"):
         tot[k] = sum(r.get(k, 0) for r in summary)
     _ft_active = (tot["ft_valid"] + tot["inv_base"] + tot["inv_gmul"]
-                  + tot["inv_brich"] + tot["inv_real"])
+                  + tot["inv_brich"] + tot["inv_mnhal"] + tot["inv_real"])
     _real_pct = (tot["inv_real"] / _ft_active) if _ft_active else 0.0
     _kpi(ws, 4, 3, 1, "שגויים אמיתיים (מלאה)", tot["inv_real"], BAD_TXT, INT)
     _kpi(ws, 4, 4, 1, "% שגויים אמיתיים", _real_pct,
@@ -425,53 +435,53 @@ def write_workbook(summary, per_emp, out_path, code_gaps=None):
     _kpi(ws, 4, 7, 1, "רטרו / רב-תקופתי", tot["multi"], WARN_TXT, INT)
 
     head_r = 7
-    # Per the review flow: part-timers are neutralized first, then each invalid
-    # full-timer counts once — base, then gmul, then דריכות; what remains is the
-    # REAL error count ("המספר האמיתי של השגויים").
+    # Neutralization chain (each invalid full-timer counts once, in this order):
+    # base → gmul → דריכות → גמול מנהל. What remains is the REAL error count.
+    # רטרו/רב-תקופתי is a SEPARATE class (base code appears twice — the slip
+    # merges two pay periods), not part of the chain, shown for reference only.
     labels = ["חודש שכר", "קובץ", "עובדים", "משרה חלקית", "משרה מלאה", "תקין (מלאה)",
-              "שגויי בסיס", "שגויי גמול", "שגויי דריכות", "שגויים אמיתיים",
-              "ללא בסיס", "רטרו", "% שגויים אמיתיים"]
-    _header_row(ws, head_r, labels, [11, 18, 10, 10, 10, 11, 10, 10, 10, 12, 9, 8, 13])
+              "שגויי בסיס", "שגויי גמול", "שגויי דריכות", "שגויי גמול מנהל",
+              "שגויים אמיתיים", "ללא בסיס", "רטרו רב-תקופתי", "% שגויים אמיתיים"]
+    _header_row(ws, head_r, labels,
+                [11, 18, 10, 10, 10, 11, 10, 10, 10, 11, 12, 9, 11, 13])
     for i, r in enumerate(summary, start=head_r + 1):
         vals = [r["month"], r["file"], r["workers"], r.get("part_time", 0),
                 r.get("ft", 0), r.get("ft_valid", 0), r.get("inv_base", 0),
-                r.get("inv_gmul", 0), r.get("inv_brich", 0), r.get("inv_real", 0),
-                r["no_base"], r["multi"], r.get("real_pct", 0.0) / 100]
+                r.get("inv_gmul", 0), r.get("inv_brich", 0), r.get("inv_mnhal", 0),
+                r.get("inv_real", 0), r["no_base"], r["multi"],
+                r.get("real_pct", 0.0) / 100]
         for c_i, v in enumerate(vals, start=1):
             cell = ws.cell(row=i, column=c_i, value=v)
             cell.border = THIN_BOX
-            if 3 <= c_i <= 12:
+            if 3 <= c_i <= 13:
                 cell.number_format = INT
             if c_i == 6:
                 cell.font = Font(color=GOOD_TXT)
-            if c_i in (7, 8, 9) and v:
+            if c_i in (7, 8, 9, 10) and v:
                 cell.font = Font(color=WARN_TXT)
-            if c_i == 10 and v:
+            if c_i == 11 and v:
                 cell.font = Font(color=BAD_TXT, bold=True)
-            if c_i == 13:
+            if c_i == 14:
                 cell.number_format = "0.00%"
     last = head_r + len(summary)
     trow = last + 1
-    for k in ("part_time", "ft", "ft_valid", "inv_base", "inv_gmul",
-              "inv_brich", "inv_real"):
-        tot[k] = sum(r.get(k, 0) for r in summary)
-    tot_active = tot["ft_valid"] + tot["inv_base"] + tot["inv_gmul"] + \
-        tot["inv_brich"] + tot["inv_real"]
-    real_pct_tot = (tot["inv_real"] / tot_active) if tot_active else 0.0
+    tot_active = _ft_active
+    real_pct_tot = _real_pct
     tvals = ["סה\"כ", "", tot["workers"], tot["part_time"], tot["ft"],
              tot["ft_valid"], tot["inv_base"], tot["inv_gmul"], tot["inv_brich"],
-             tot["inv_real"], tot["no_base"], tot["multi"], real_pct_tot]
+             tot["inv_mnhal"], tot["inv_real"], tot["no_base"], tot["multi"],
+             real_pct_tot]
     for c_i, v in enumerate(tvals, start=1):
         cell = ws.cell(row=trow, column=c_i, value=v)
         cell.font = Font(bold=True)
         cell.border = Border(top=Side(style="double", color=NAVY))
-        if 3 <= c_i <= 12:
+        if 3 <= c_i <= 13:
             cell.number_format = INT
-        if c_i == 13:
+        if c_i == 14:
             cell.number_format = "0.00%"
-        if c_i == 10:
+        if c_i == 11:
             cell.font = Font(bold=True, color=BAD_TXT)
-    rng = f"M{head_r + 1}:M{last}"
+    rng = f"N{head_r + 1}:N{last}"    # % שגויים אמיתיים
     ws.conditional_formatting.add(rng, CellIsRule(
         operator="lessThanOrEqual", formula=["0.01"],
         font=Font(color=GOOD_TXT), fill=PatternFill("solid", fgColor=GOOD_BG)))
@@ -486,13 +496,13 @@ def write_workbook(summary, per_emp, out_path, code_gaps=None):
         DataBarRule(start_type="num", start_value=0, end_type="max",
                     color=BAR_BLUE, showValue=True))
     ws.conditional_formatting.add(
-        f"J{head_r + 1}:J{last}",
+        f"K{head_r + 1}:K{last}",          # שגויים אמיתיים
         DataBarRule(start_type="num", start_value=0, end_type="max",
                     color="FFD03B3B", showValue=True))
 
     # ---- פערים לפי סמל שכר (a second table, to the right of the per-file one) ---
     if code_gaps:
-        cbase = 12   # column L
+        cbase = 16   # column P (leaves a gap after the 14-column per-file table)
         heads = ["סמל", "שם רכיב", "כמות פערים", "שווי ₪", "הסיבה לפער"]
         widths = [9, 22, 12, 13, 40]
         for j, (h, w) in enumerate(zip(heads, widths)):
