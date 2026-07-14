@@ -1223,6 +1223,7 @@ async function runBulk(files){
             if(baseDiff!==null && Math.abs(baseDiff)>1) errCat='base';
             else if(gf[667]||gf[897]) errCat='gmul';
             else if(gf[798]) errCat='brich';
+            else if(gf[4983]) errCat='mnhal';
             else errCat='real';
             // Per-code gap tally for the exec summary: the base (when off) plus
             // every flagged component, each with its ₪ magnitude.
@@ -1236,7 +1237,7 @@ async function runBulk(files){
           perEmp.push([month, f.name.replace(/\.xlsx$/i,''), r.worker_id, r.ministry_name,
             r.darga_label, r.vatek, r.job_pct,
             SalaryEngine.round2(baseSlip), baseCalc?SalaryEngine.round2(baseCalc):null, baseDiff,
-            gap(667), gap(897), gap(798),
+            gap(667), gap(897), gap(798), gap(4983),
             r.expected_total, totalCalc, totalDiff, BULK_STATUS_HE[r.status]||r.status, flags, diag, delta,
             r.status, fullTime, errCat]);
         }
@@ -1246,12 +1247,12 @@ async function runBulk(files){
         const ft=fr.filter(x=>x[FT_IDX]);
         const cnt=(cat)=>ft.filter(x=>x[STATUS_RAW_IDX]==='invalid'&&x[ERRCAT_IDX]===cat).length;
         const ftValid=ft.filter(x=>x[STATUS_RAW_IDX]==='valid').length;
-        const invBase=cnt('base'),invGmul=cnt('gmul'),invBrich=cnt('brich'),invReal=cnt('real');
-        const ftAct=ftValid+invBase+invGmul+invBrich+invReal;
+        const invBase=cnt('base'),invGmul=cnt('gmul'),invBrich=cnt('brich'),invMnhal=cnt('mnhal'),invReal=cnt('real');
+        const ftAct=ftValid+invBase+invGmul+invBrich+invMnhal+invReal;
         perFile.push({name:f.name.replace(/\.xlsx$/i,''), month, workers:results.length,
           valid:v, invalid:inv, no_base:nb, multi:mp, acc:active?SalaryEngine.round2(v/active*100):0,
           part_time:fr.length-ft.length, ft:ft.length, ft_valid:ftValid,
-          inv_base:invBase, inv_gmul:invGmul, inv_brich:invBrich, inv_real:invReal,
+          inv_base:invBase, inv_gmul:invGmul, inv_brich:invBrich, inv_mnhal:invMnhal, inv_real:invReal,
           real_pct:ftAct?SalaryEngine.round2(invReal/ftAct*100):0});
       }catch(fe){
         failed.push({name:f.name, msg:fe.message||String(fe)});
@@ -1277,8 +1278,8 @@ async function runBulk(files){
 // ₪ magnitude of a bulk per-employee row's anomaly: the larger of the base gap
 // (idx 9) and the corrected-total gap (idx 14, which already folds in every
 // component correction incl. גמול), so a component-only mismatch still ranks.
-const R_STATUS=20, STATUS_RAW_IDX=20, FT_IDX=21, ERRCAT_IDX=22;
-function rowAnomaly(r){ return Math.max(Math.abs(r[9]||0), Math.abs(r[15]||0)); }
+const R_STATUS=21, STATUS_RAW_IDX=21, FT_IDX=22, ERRCAT_IDX=23;
+function rowAnomaly(r){ return Math.max(Math.abs(r[9]||0), Math.abs(r[16]||0)); }
 // Sum of anomaly ₪ per file key (month+name), computed from perEmp rows.
 function anomalySums(perEmp){
   const by=new Map(); let total=0;
@@ -1482,7 +1483,7 @@ const EMP_SPEC=[
   {h:'בסיס בתלוש',w:13,fmt:'m'}, {h:'בסיס מחושב',w:13,fmt:'m'},
   {h:'הפרש בסיס',w:12,fmt:'m',diff:1},
   {h:"פער גמול א'",w:12,fmt:'m',diff:1}, {h:"פער גמול ב'",w:12,fmt:'m',diff:1},
-  {h:'פער דריכות בי"ח',w:13,fmt:'m',diff:1},
+  {h:'פער דריכות בי"ח',w:13,fmt:'m',diff:1}, {h:'פער גמול מנהל',w:12,fmt:'m',diff:1},
   {h:'סכום בתלוש',w:13,fmt:'m'}, {h:'סכום מחושב',w:13,fmt:'m'},
   {h:'הפרש כולל',w:12,fmt:'m',diff:1},
   {h:'סטטוס',w:16,status:1}, {h:'רכיבים חריגים',w:30}, {h:'אבחון',w:30},
@@ -1543,18 +1544,18 @@ async function downloadUnified(){
     const wb=new ExcelJS.Workbook();
     // ---- לוח בקרה ----------------------------------------------------------
     const ws=wb.addWorksheet('לוח בקרה',{views:[{rightToLeft:true,showGridLines:false}]});
-    ws.mergeCells('A1:M1');
+    ws.mergeCells('A1:N1');
     const title=ws.getCell('A1'); title.value='בדיקת התאמת תלושים — דוח מאוחד';
     title.font={size:16,bold:true,color:{argb:XL.NAVY}};
-    ws.mergeCells('A2:M2');
+    ws.mergeCells('A2:N2');
     const sub=ws.getCell('A2');
-    sub.value=`${_bulkData.perFile.length} קבצים · הופק ${new Date().toLocaleDateString('he-IL')} · מנטרל משרה חלקית, פערי בסיס/גמול/דריכות — הנותר הוא השגיאה האמיתית`;
+    sub.value=`${_bulkData.perFile.length} קבצים · הופק ${new Date().toLocaleDateString('he-IL')} · מנטרל: משרה חלקית ← בסיס ← גמול השתלמות ← דריכות בי"ח ← גמול מנהל. הנותר = שגיאה אמיתית. (רטרו רב-תקופתי מחוץ לשרשרת)`;
     sub.font={size:10,color:{argb:XL.MUTED}};
     // Totals: sum the full-time neutralization fields across files.
     const tot={workers:0,part_time:0,ft:0,ft_valid:0,inv_base:0,inv_gmul:0,
-               inv_brich:0,inv_real:0,no_base:0,multi:0};
+               inv_brich:0,inv_mnhal:0,inv_real:0,no_base:0,multi:0};
     for(const s of _bulkData.perFile) for(const k in tot) tot[k]+=(s[k]||0);
-    const ftAct=tot.ft_valid+tot.inv_base+tot.inv_gmul+tot.inv_brich+tot.inv_real;
+    const ftAct=tot.ft_valid+tot.inv_base+tot.inv_gmul+tot.inv_brich+tot.inv_mnhal+tot.inv_real;
     const realPct=ftAct?tot.inv_real/ftAct:0;
     const kpis=[['סה"כ עובדים',tot.workers,null,INT_FMT],['משרה מלאה',tot.ft,null,INT_FMT],
       ['תקין (מלאה)',tot.ft_valid,XL.GOODT,INT_FMT],
@@ -1572,27 +1573,27 @@ async function downloadUnified(){
     ws.getRow(4).height=16; ws.getRow(5).height=24;
     ws.addRow([]);
     styleHeaderRow(ws,['חודש שכר','קובץ','עובדים','משרה חלקית','משרה מלאה','תקין (מלאה)',
-      'שגויי בסיס','שגויי גמול','שגויי דריכות','שגויים אמיתיים','ללא בסיס','רטרו','% שגויים אמיתיים'],
-      [11,18,10,10,10,11,10,10,10,12,9,8,13]);
+      'שגויי בסיס','שגויי גמול','שגויי דריכות','שגויי גמול מנהל','שגויים אמיתיים','ללא בסיס','רטרו רב-תקופתי','% שגויים אמיתיים'],
+      [11,18,10,10,10,11,10,10,10,11,12,9,11,13]);
     const headR=ws.lastRow.number;
     for(const s of _bulkData.perFile){
-      const fa=s.ft_valid+s.inv_base+s.inv_gmul+s.inv_brich+s.inv_real;
+      const fa=s.ft_valid+s.inv_base+s.inv_gmul+s.inv_brich+s.inv_mnhal+s.inv_real;
       const rp=fa?s.inv_real/fa:0;
       const r=ws.addRow([s.month,s.name,s.workers,s.part_time,s.ft,s.ft_valid,
-        s.inv_base,s.inv_gmul,s.inv_brich,s.inv_real,s.no_base,s.multi,rp]);
-      for(let ci=3;ci<=12;ci++) r.getCell(ci).numFmt=INT_FMT;
+        s.inv_base,s.inv_gmul,s.inv_brich,s.inv_mnhal,s.inv_real,s.no_base,s.multi,rp]);
+      for(let ci=3;ci<=13;ci++) r.getCell(ci).numFmt=INT_FMT;
       r.getCell(6).font={color:{argb:XL.GOODT}};
-      [7,8,9].forEach(ci=>{ if(r.getCell(ci).value) r.getCell(ci).font={color:{argb:XL.WARNT}}; });
-      if(s.inv_real) r.getCell(10).font={bold:true,color:{argb:XL.BADT}};
-      r.getCell(13).numFmt='0.00%';
+      [7,8,9,10].forEach(ci=>{ if(r.getCell(ci).value) r.getCell(ci).font={color:{argb:XL.WARNT}}; });
+      if(s.inv_real) r.getCell(11).font={bold:true,color:{argb:XL.BADT}};
+      r.getCell(14).numFmt='0.00%';
     }
     const lastR=ws.lastRow.number;
     const trow=ws.addRow(['סה"כ','',tot.workers,tot.part_time,tot.ft,tot.ft_valid,
-      tot.inv_base,tot.inv_gmul,tot.inv_brich,tot.inv_real,tot.no_base,tot.multi,realPct]);
-    trow.font={bold:true}; for(let ci=3;ci<=12;ci++) trow.getCell(ci).numFmt=INT_FMT;
-    trow.getCell(10).font={bold:true,color:{argb:XL.BADT}}; trow.getCell(13).numFmt='0.00%';
+      tot.inv_base,tot.inv_gmul,tot.inv_brich,tot.inv_mnhal,tot.inv_real,tot.no_base,tot.multi,realPct]);
+    trow.font={bold:true}; for(let ci=3;ci<=13;ci++) trow.getCell(ci).numFmt=INT_FMT;
+    trow.getCell(11).font={bold:true,color:{argb:XL.BADT}}; trow.getCell(14).numFmt='0.00%';
     // % real errors — LOW is good.
-    ws.addConditionalFormatting({ref:`M${headR+1}:M${lastR}`,rules:[
+    ws.addConditionalFormatting({ref:`N${headR+1}:N${lastR}`,rules:[
       {type:'cellIs',operator:'lessThanOrEqual',formulae:['0.01'],priority:1,
        style:{font:{color:{argb:XL.GOODT}},fill:fill(XL.GOODB)}},
       {type:'cellIs',operator:'greaterThan',formulae:['0.05'],priority:2,
@@ -1601,7 +1602,7 @@ async function downloadUnified(){
        style:{font:{color:{argb:XL.WARNT}},fill:fill(XL.WARNB)}}]});
     ws.addConditionalFormatting({ref:`C${headR+1}:C${lastR}`,rules:[
       {type:'dataBar',minLength:0,maxLength:100,priority:4,cfvo:[{type:'num',value:0},{type:'max'}],color:{argb:XL.BAR}}]});
-    ws.addConditionalFormatting({ref:`J${headR+1}:J${lastR}`,rules:[
+    ws.addConditionalFormatting({ref:`K${headR+1}:K${lastR}`,rules:[
       {type:'dataBar',minLength:0,maxLength:100,priority:5,cfvo:[{type:'num',value:0},{type:'max'}],color:{argb:XL.REDBAR}}]});
 
     // ---- שגויים לבדיקה: full-time workers whose error is real -------------------
