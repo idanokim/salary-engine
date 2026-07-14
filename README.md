@@ -6,6 +6,7 @@ computes the expected salary from the official pay tables and flags each pay
 slip as **valid (תקין)** or **invalid (שגוי)**. Built with FastAPI.
 
 📖 **How the engine works:** see [`ENGINE.md`](ENGINE.md) — "the brain of the simulator".
+📖 **עדכון חוברת Progim:** see [`docs/PROGIM_UPDATE.md`](docs/PROGIM_UPDATE.md).
 
 The pay tables (75 grades, 9 seniority tracks, per-track caps) are extracted
 from the Progim workbook into `lookups.json` via `tools/extract_lookups.py`,
