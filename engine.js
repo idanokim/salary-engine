@@ -93,7 +93,21 @@
     return rules;
   }
 
-  function checkWorkerComponents(rows, jobPct, rules, ministryCode) {
+  // Rates admissible for a grade-tiered tosefet (מנמ"ש 2010, code 5216): the
+  // rate steps down above a track-specific grade (מנהלי 17+/18; מח"ר track 11
+  // 38+/39). Each level keeps its historical and current rate so past periods
+  // still validate. Returns null when the grade can't be read — the caller then
+  // falls back to the full rate set (a missing label never fabricates a gap).
+  function gradeSplitRates(gs, dargaLabel, droog) {
+    const m = String(dargaLabel == null ? '' : dargaLabel).match(/^\s*\+?(\d+)/);
+    if (!m) return null;
+    const grade = parseInt(m[1], 10);
+    const isMachar = parseInt(droog, 10) === gs.machar_track;
+    const threshold = isMachar ? gs.machar_from_grade : gs.default_from_grade;
+    return grade >= threshold ? gs.level2_rates : gs.level1_rates;
+  }
+
+  function checkWorkerComponents(rows, jobPct, rules, ministryCode, dargaLabel, droog) {
     const amounts = new Map();
     for (const r of rows) {
       const code = Number(r.comp_code);
@@ -113,8 +127,16 @@
         for (const c of rule.base_codes) base += (amounts.get(c) || 0);
         base += (rule.base_const || 0) * jp;
         if (base <= 0) continue;
-        let best = rule.rates[0];
-        for (const r of rule.rates) if (Math.abs(base * r - slip) < Math.abs(base * best - slip)) best = r;
+        // Grade-tiered tosefet (מנמ"ש 2010): restrict to the grade's own level
+        // rates so a slip paid at the wrong level's rate is caught, instead of
+        // silently accepting any of the four rates.
+        let rates = rule.rates;
+        if (rule.grade_split) {
+          const lvl = gradeSplitRates(rule.grade_split, dargaLabel, droog);
+          if (lvl) rates = lvl;
+        }
+        let best = rates[0];
+        for (const r of rates) if (Math.abs(base * r - slip) < Math.abs(base * best - slip)) best = r;
         expected = round2(base * best);
       } else if (rule.type === 'max22') {
         // 4550: the higher of 22% × (משולב + הסכם 99) minus deductions, and the
@@ -488,7 +510,7 @@
       const r = calculate(lk, rows, wid, plusRemap.get(key));
       r.comp_flags = {};
       const active = r.status === STATUS.VALID || r.status === STATUS.INVALID;
-      const checks = (rules && active) ? checkWorkerComponents(rows, r.job_pct, rules, r.ministry_code) : {};
+      const checks = (rules && active) ? checkWorkerComponents(rows, r.job_pct, rules, r.ministry_code, r.darga_label, r.droog) : {};
       allChecks.push(checks);
       results.push(r);
     }
