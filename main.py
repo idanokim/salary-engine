@@ -21,6 +21,15 @@ from fastapi.responses import StreamingResponse, FileResponse, JSONResponse, Res
 from pydantic import BaseModel, Field
 
 MATCH_THRESHOLD = 1.0
+# Percentage tosafot ride the same base, which carries a small (~₪15) rounding
+# "phantom" (see the 3.6% / מנמ"ש investigations): the identical base nudge that
+# keeps the 3.6% gap under ₪1 pushes the 8–10% ones over it, so every worker
+# with a 3.6% gap also shows one on מנמ"ש/2011/2024. Judging a percent component
+# by its IMPLIED BASE (slip ÷ rate) instead of absolute ₪ clears all of a
+# worker's base-noise gaps at once, while a real rate/level error (implied base
+# off by hundreds) still fails. Threshold sits well above the noise cluster
+# (≤₪23) and well below the genuine population (>₪100).
+PERCENT_BASE_TOL = 25.0
 
 # Default seniority track (קוד דרוג): 1 = מינהלי.
 DEFAULT_TRACK = 1
@@ -269,10 +278,14 @@ def check_worker_components(components, job_pct, rules, ministry_code=0,
             # גמול מינהל 4983 ∈ {105, 210, 315}). Wrong amounts still fail all.
             best = min(rule["amounts"], key=lambda a: abs(a * jp - slip))
             expected = round(best * jp, 2)
+        ok = abs(expected - slip) <= MATCH_THRESHOLD
+        if rtype == "percent" and not ok and best > 0:
+            # base-relative pass: same base nudge that clears the 3.6% gap.
+            ok = abs(slip / best - base) <= PERCENT_BASE_TOL
         checks[int(code)] = {
             "slip": round(slip, 2), "expected": expected,
             "diff": round(expected - slip, 2),
-            "ok": abs(expected - slip) <= MATCH_THRESHOLD,
+            "ok": ok,
             "name": rule["name"],
         }
     return checks
