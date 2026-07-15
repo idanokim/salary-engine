@@ -804,8 +804,9 @@
     return { codesSorted, codeNames, rows };
   }
 
+  const BUILD = '2026-07-15b';   // bump on each engine change; see index.html ?v=
   const api = {
-    MATCH_THRESHOLD, STATUS, round2,
+    BUILD, MATCH_THRESHOLD, STATUS, round2,
     prepLookups, prepRules, getGradeBase, getVatekMultiplier, baseWithinTolerance,
     checkWorkerComponents, trustedRuleCodes, resolvePlusGrades, normalizeGradeLabel,
     diagnoseResult, reportRows, REPORT_HEADERS,

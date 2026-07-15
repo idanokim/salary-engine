@@ -374,7 +374,7 @@ html.present .present-btn{background:#fff;color:var(--primary)}
     </div>
     <div class="brand">
       <h1>סימולטור שכר</h1>
-      <p>בדיקת תלושים · מנהלת הגמלאות</p>
+      <p>בדיקת תלושים · מנהלת הגמלאות <span id="engine-build" style="opacity:.5;font-size:.8em"></span></p>
     </div>
     <div class="spacer"></div>
     <button type="button" class="present-btn" id="present-btn" onclick="togglePresent()" title="מצב מצגת — טקסט מוגדל להקרנה">
@@ -761,9 +761,16 @@ html.present .present-btn{background:#fff;color:var(--primary)}
      the validation, ExcelJS writes the highlighted export. Nothing is uploaded. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
-<script src="engine.js"></script>
+<script src="engine.js?v=2026-07-15b"></script>
 <script>
 const API = '';
+// Surface the loaded engine build so a stale (browser-cached) engine.js is
+// obvious — check the console / the footer marker against the deploy.
+try { console.log('SalaryEngine build:', (window.SalaryEngine||{}).BUILD); } catch(e){}
+document.addEventListener('DOMContentLoaded', () => {
+  const m = document.getElementById('engine-build');
+  if (m && window.SalaryEngine) m.textContent = 'engine ' + SalaryEngine.BUILD;
+});
 
 async function checkStatus(){
   const el = document.getElementById('status-el');
