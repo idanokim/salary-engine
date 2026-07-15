@@ -225,7 +225,7 @@ def _grade_split_rates(gs, darga_label, droog):
 
 
 def check_worker_components(components, job_pct, rules, ministry_code=0,
-                           darga_label=None, droog=None) -> dict:
+                           darga_label=None, droog=None, pure: bool = False) -> dict:
     """Check each rule-covered percentage component on one slip.
 
     components: iterable of (code, name, amount, pensionable) slip rows.
@@ -279,8 +279,9 @@ def check_worker_components(components, job_pct, rules, ministry_code=0,
             best = min(rule["amounts"], key=lambda a: abs(a * jp - slip))
             expected = round(best * jp, 2)
         ok = abs(expected - slip) <= MATCH_THRESHOLD
-        if rtype == "percent" and not ok and best > 0:
+        if not pure and rtype == "percent" and not ok and best > 0:
             # base-relative pass: same base nudge that clears the 3.6% gap.
+            # (An add-on beyond the literal Progim — off in pure mode.)
             ok = abs(slip / best - base) <= PERCENT_BASE_TOL
         checks[int(code)] = {
             "slip": round(slip, 2), "expected": expected,
@@ -500,12 +501,16 @@ def normalize_vatek(v: float) -> float:
     return v
 
 
-def calculate(worker: WorkerInput, lookups: dict) -> SalaryResult:
+def calculate(worker: WorkerInput, lookups: dict, pure: bool = False) -> SalaryResult:
+    # pure=True runs the Progim literally: raw ותק (no truncation restore) and an
+    # exact base match (no seniority-rounding window) — the app's data-cleaning
+    # add-ons are off so the run reflects the workbook as-is.
     errors = []
     component_results = []
     total = 0.0
     track = int(worker.droog or DEFAULT_TRACK)
-    worker.vatek_calculated = normalize_vatek(worker.vatek_calculated or 0)
+    if not pure:
+        worker.vatek_calculated = normalize_vatek(worker.vatek_calculated or 0)
     grade_base = get_grade_base(lookups, worker.darga_label)
     if grade_base is None:
         errors.append(f"Unknown grade label: {worker.darga_label!r} (kod_darga {worker.kod_darga})")
@@ -564,10 +569,17 @@ def calculate(worker: WorkerInput, lookups: dict) -> SalaryResult:
         # Active single-period slip: judge the base against the seniority-rounding
         # window rather than the single rounded ותק value, so the ±₪1–2 artifacts
         # caused by the rounded ותק column aren't flagged as real errors.
-        base_ok = base_within_tolerance(
-            grade_base, worker.vatek_calculated, track, job_pct, raw_base_sum, lookups)
-        if base_ok is not None:
-            total_match = base_ok
+        if pure:
+            # Literal Progim: base = grade × ותק-multiplier × job%, matched to the
+            # agora (MATCH_THRESHOLD), with no seniority-rounding window.
+            if grade_base is not None and vatek_mult is not None:
+                exp_base = grade_base * vatek_mult * job_pct
+                total_match = abs(raw_base_sum - exp_base) <= MATCH_THRESHOLD
+        else:
+            base_ok = base_within_tolerance(
+                grade_base, worker.vatek_calculated, track, job_pct, raw_base_sum, lookups)
+            if base_ok is not None:
+                total_match = base_ok
         if grade_base is None or vatek_mult is None:
             # The base could not be verified at all (unknown grade/track) — an
             # unverifiable active slip is never תקין by default.
@@ -730,18 +742,25 @@ def resolve_plus_grades(workers_raw: dict, lookups: dict) -> dict:
     return remap
 
 
-def run_engine_full(workers_raw: dict, lookups: dict) -> list:
+def run_engine_full(workers_raw: dict, lookups: dict, pure: bool = False) -> list:
     """Run the full engine over grouped גולמי rows: base validation per worker,
     then חוקה component checks with per-file self-calibration.
 
     Returns a list of dicts: {result, comp_checks, comp_flags} where comp_flags
     holds only the mismatches of rules that hold on this file's population —
     a flagged component is a real, explainable gap.
+
+    pure=True runs the Progim workbook literally — no self-calibration trust
+    gate, no base-relative tolerance, no plus-grade voting, no ותק restore, and
+    no gmul/minimum population reconstruction. Every rule is applied as written
+    and every mismatch is reported, so the run reflects the Progim as-is. The
+    add-ons that would have cleared a gap are surfaced separately as
+    recommendations (see build_progim_recommendations), not folded in silently.
     """
     rules = get_rules()
     entries = []
     # Pass A0 — resolve dropped-'+' grade labels from the file's own population.
-    plus_remap = resolve_plus_grades(workers_raw, lookups)
+    plus_remap = {} if pure else resolve_plus_grades(workers_raw, lookups)
     # Pass A — base validation + component checks per worker.
     for worker_id, rows in workers_raw.items():
         first = rows[0]
@@ -759,17 +778,25 @@ def run_engine_full(workers_raw: dict, lookups: dict) -> list:
             calc_month=0, retro_month=0, retro_count=0,
             components=components,
         )
-        result = calculate(worker, lookups)
+        result = calculate(worker, lookups, pure=pure)
         # Component checks only make sense on active single-period slips.
         checks = (check_worker_components(components, worker.job_pct or 1.0, rules,
                                           worker.ministry_code,
-                                          worker.darga_label, worker.droog)
+                                          worker.darga_label, worker.droog, pure=pure)
                   if result.status in (STATUS_VALID, STATUS_INVALID) else {})
-        entries.append({"result": result, "comp_checks": checks})
-    # Pass B — self-calibrate rule trust on this file, then attach flags.
-    trusted = trusted_rule_codes([e["comp_checks"] for e in entries], rules)
-    gmul_flags = check_gmul_population(entries)
-    min_flags = check_minimum_population(entries, rules)
+        # Base-only verdict, captured before pass B folds component flags in.
+        entries.append({"result": result, "comp_checks": checks,
+                        "base_ok": result.status == STATUS_VALID})
+    # Pass B — attach flags. In pure mode every rule is trusted as written and
+    # the gmul/minimum population reconstructions are skipped (they are add-ons,
+    # not part of the literal Progim); otherwise self-calibrate rule trust.
+    if pure:
+        trusted = set(e_code for e in entries for e_code in e["comp_checks"])
+        gmul_flags, min_flags = {}, {}
+    else:
+        trusted = trusted_rule_codes([e["comp_checks"] for e in entries], rules)
+        gmul_flags = check_gmul_population(entries)
+        min_flags = check_minimum_population(entries, rules)
     for i, e in enumerate(entries):
         flags = {code: chk for code, chk in e["comp_checks"].items()
                  if code in trusted and not chk["ok"]}
@@ -796,6 +823,64 @@ def run_engine_full(workers_raw: dict, lookups: dict) -> list:
                 result.total_diff = round((result.total_diff or 0) + comp_diff, 4)
         e["findings"] = diagnose_entry(e, lookups)
     return entries
+
+
+def build_progim_recommendations(pure_entries, smart_entries, rules) -> list:
+    """Compare a pure-Progim run against the smart run and turn every gap the
+    add-ons would have silently cleared into a Progim recommendation.
+
+    We never patch the engine for these — the user decides what to add to the
+    workbook. Returns a list of {category, code, name, count, sum, suggestion},
+    most-frequent first, so each run says exactly what the Progim is missing.
+    """
+    smart_by_id = {e["result"].worker_id: e for e in smart_entries}
+    recs = {}  # key -> {category, code, name, count, sum, suggestion}
+
+    def bump(key, category, name, suggestion, amount=0.0, code=None):
+        r = recs.setdefault(key, {"category": category, "code": code, "name": name,
+                                  "count": 0, "sum": 0.0, "suggestion": suggestion})
+        r["count"] += 1
+        r["sum"] += abs(amount or 0.0)
+
+    for pe in pure_entries:
+        wid = pe["result"].worker_id
+        se = smart_by_id.get(wid)
+        if se is None:
+            continue
+        pr, sr = pe["result"], se["result"]
+        # Base: rejected by the literal Progim but cleared by the smart layer's
+        # ותק-rounding window / '+' resolution / truncation restore.
+        if not pe.get("base_ok", True) and se.get("base_ok", False):
+            bump("base_precision", "base_precision", "שכר בסיס",
+                 "ה-Progim דורש ותק/תווית-דרגה מדויקים; הקובץ מעגל ותק ל-2 "
+                 "ספרות ולעיתים משמיט '+' — לשקול לתקן במקור או להוסיף וריאנט",
+                 round(pr.total_diff or 0.0, 2))
+        # Components: any code flagged in pure but not in smart is a gap the
+        # add-ons cleared — classify by why.
+        for code, chk in pe["comp_flags"].items():
+            if code in se["comp_flags"]:
+                continue  # flagged in both — a genuine gap, not an add-on artifact
+            name = chk.get("name", str(code))
+            rtype = rules.get(code, {}).get("type")
+            slip, exp = chk.get("slip", 0.0), chk.get("expected", 0.0)
+            if rtype == "shekel":
+                bump(("shekel", code), "shekel_mismatch", name,
+                     f"הסכום השקלי של סמל {code} בחוקה אינו תואם את הקובץ — "
+                     "לעדכן את טבלת הסכומים (דרגה×מסלול×פעימה) ב-Progim", chk.get("diff"), code)
+            elif abs(round(exp - slip, 2)) <= 20.0:
+                # small ₪ gap on a percent tosefet ⇒ the shared ~₪15 phantom base.
+                bump(("base_noise", code), "base_noise", name,
+                     "פער עיגול-בסיס קטן (‏~₪15 'בסיס-רפאים'); לשקול יישור הרכב "
+                     "הבסיס בחוקה או קבלת אישור חשכ\"ל", chk.get("diff"), code)
+            else:
+                bump(("unstable_rule", code), "unstable_rule", name,
+                     f"כלל {code} אינו מתאמת על מרבית נושאי הרכיב בקובץ — לבדוק "
+                     "אחוז/בסיס בחוקה (ייתכן פעימה/סמל-בסיס חסר)", chk.get("diff"), code)
+
+    out = sorted(recs.values(), key=lambda r: -r["count"])
+    for r in out:
+        r["sum"] = round(r["sum"], 2)
+    return out
 
 
 # ---------------------------------------------------------------------------
