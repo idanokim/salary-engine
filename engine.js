@@ -114,7 +114,7 @@
     return grade >= threshold ? gs.level2_rates : gs.level1_rates;
   }
 
-  function checkWorkerComponents(rows, jobPct, rules, ministryCode, dargaLabel, droog) {
+  function checkWorkerComponents(rows, jobPct, rules, ministryCode, dargaLabel, droog, pure) {
     const amounts = new Map();
     for (const r of rows) {
       const code = Number(r.comp_code);
@@ -146,8 +146,9 @@
         for (const r of rates) if (Math.abs(base * r - slip) < Math.abs(base * best - slip)) best = r;
         expected = round2(base * best);
         // base-relative pass: same base nudge that clears the 3.6% gap.
+        // (An add-on beyond the literal Progim — off in pure mode.)
         okOverride = Math.abs(expected - slip) <= MATCH_THRESHOLD ||
-          (best > 0 && Math.abs(slip / best - base) <= PERCENT_BASE_TOL);
+          (!pure && best > 0 && Math.abs(slip / best - base) <= PERCENT_BASE_TOL);
       } else if (rule.type === 'max22') {
         // 4550: the higher of 22% × (משולב + הסכם 99) minus deductions, and the
         // ministry floor × job% (Progim '4550' sheet). Self-calibration keeps
@@ -448,12 +449,14 @@
     return v;
   }
 
-  function calculate(lk, rows, workerId, dargaOverride) {
+  function calculate(lk, rows, workerId, dargaOverride, pure) {
+    // pure=true runs the Progim literally: raw ותק (no truncation restore) and
+    // an exact base match (no seniority-rounding window).
     const first = rows[0];
     const track = parseInt(first.droog, 10) || DEFAULT_TRACK;
     const darga = (dargaOverride !== undefined && dargaOverride !== null)
       ? dargaOverride : normalizeGradeLabel(first.darga_label);
-    const vatek = normalizeVatek(first.vatek);
+    const vatek = pure ? (parseFloat(first.vatek) || 0) : normalizeVatek(first.vatek);
     const jobPct = (parseFloat(first.job_pct) || 0) || 1.0;
     const gradeBase = getGradeBase(lk, darga);
     const vatekMult = getVatekMultiplier(lk, vatek, track);
@@ -492,8 +495,15 @@
     let totalDiff = round(total - expectedTotal, 4);
     let totalMatch = Math.abs(totalDiff) <= MATCH_THRESHOLD;
     if (status === null) {
-      const ok = baseWithinTolerance(lk, gradeBase, vatek, track, jobPct, rawBaseSum);
-      if (ok !== null) totalMatch = ok;
+      if (pure) {
+        // Literal Progim: base = grade × ותק-mult × job%, matched to the agora,
+        // with no seniority-rounding window.
+        if (gradeBase !== null && vatekMult !== null)
+          totalMatch = Math.abs(rawBaseSum - gradeBase * vatekMult * jobPct) <= MATCH_THRESHOLD;
+      } else {
+        const ok = baseWithinTolerance(lk, gradeBase, vatek, track, jobPct, rawBaseSum);
+        if (ok !== null) totalMatch = ok;
+      }
       // An unverifiable active slip (unknown grade/track) is never תקין by default.
       if (gradeBase === null || vatekMult === null) totalMatch = false;
       status = totalMatch ? STATUS.VALID : STATUS.INVALID;
@@ -509,19 +519,24 @@
     };
   }
 
-  function runEngine(lk, workers, rules) {
+  function runEngine(lk, workers, rules, pure) {
+    // pure=true runs the Progim workbook literally — no self-calibration trust
+    // gate, no base-relative tolerance, no plus-grade voting, no ותק restore,
+    // no gmul/minimum population. Every rule is applied as written; the add-ons
+    // that would clear a gap are surfaced via buildProgimRecommendations.
     const results = [];
     const allChecks = [];
     // Pass A0 — resolve dropped-'+' grade labels from the file's own population.
-    const plusRemap = resolvePlusGrades(lk, workers);
+    const plusRemap = pure ? new Map() : resolvePlusGrades(lk, workers);
     // Pass A — base validation + חוקה component checks per worker.
     for (const [wid, rows] of workers) {
       const first = rows[0];
       const key = `${first.kod_darga}|${String(first.darga_label ?? '').trim()}`;
-      const r = calculate(lk, rows, wid, plusRemap.get(key));
+      const r = calculate(lk, rows, wid, plusRemap.get(key), pure);
       r.comp_flags = {};
       const active = r.status === STATUS.VALID || r.status === STATUS.INVALID;
-      const checks = (rules && active) ? checkWorkerComponents(rows, r.job_pct, rules, r.ministry_code, r.darga_label, r.droog) : {};
+      r.base_ok = active && r.status === STATUS.VALID;  // base-only verdict (pre pass B)
+      const checks = (rules && active) ? checkWorkerComponents(rows, r.job_pct, rules, r.ministry_code, r.darga_label, r.droog, pure) : {};
       allChecks.push(checks);
       results.push(r);
     }
@@ -529,10 +544,18 @@
       for (const r of results) r.findings = diagnoseResult(lk, r);
       return results;
     }
-    // Pass B — self-calibrate rule trust on this file, then attach flags.
-    const trusted = trustedRuleCodes(allChecks, rules);
-    const gmulFlags = checkGmulPopulation(results);
-    const minFlags = checkMinimumPopulation(results, rules);
+    // Pass B — attach flags. Pure mode trusts every rule as written and skips
+    // the gmul/minimum population reconstructions; otherwise self-calibrate.
+    let trusted, gmulFlags, minFlags;
+    if (pure) {
+      trusted = new Set();
+      for (const checks of allChecks) for (const code in checks) trusted.add(code);
+      gmulFlags = new Map(); minFlags = new Map();
+    } else {
+      trusted = trustedRuleCodes(allChecks, rules);
+      gmulFlags = checkGmulPopulation(results);
+      minFlags = checkMinimumPopulation(results, rules);
+    }
     for (let i = 0; i < results.length; i++) {
       const r = results[i], checks = allChecks[i];
       for (const code in checks) {
@@ -556,6 +579,54 @@
       r.findings = diagnoseResult(lk, r);
     }
     return results;
+  }
+
+  // Compare a pure-Progim run against the smart run and turn every gap the
+  // add-ons would have silently cleared into a Progim recommendation (mirror of
+  // build_progim_recommendations in main.py). Returns [{category, code, name,
+  // count, sum, suggestion}] most-frequent first.
+  function buildProgimRecommendations(pureResults, smartResults, rules) {
+    const smartById = new Map(smartResults.map(r => [r.worker_id, r]));
+    const recs = new Map();
+    const bump = (key, category, name, suggestion, amount, code) => {
+      let a = recs.get(key);
+      if (!a) { a = { category, code: code ?? null, name, count: 0, sum: 0, suggestion }; recs.set(key, a); }
+      a.count++; a.sum += Math.abs(amount || 0);
+    };
+    for (const pr of pureResults) {
+      const sr = smartById.get(pr.worker_id);
+      if (!sr) continue;
+      // Base rejected by the literal Progim but cleared by the smart layer.
+      if (!pr.base_ok && sr.base_ok) {
+        bump('base_precision', 'base_precision', 'שכר בסיס',
+          "ה-Progim דורש ותק/תווית-דרגה מדויקים; הקובץ מעגל ותק ל-2 ספרות " +
+          "ולעיתים משמיט '+' — לשקול לתקן במקור או להוסיף וריאנט",
+          round2(pr.total_diff || 0));
+      }
+      for (const code in pr.comp_flags) {
+        if (sr.comp_flags && code in sr.comp_flags) continue;   // flagged in both — genuine
+        const chk = pr.comp_flags[code];
+        const rtype = (rules[code] || {}).type;
+        const gap = Math.abs(round2((chk.expected || 0) - (chk.slip || 0)));
+        if (rtype === 'shekel') {
+          bump('shekel|' + code, 'shekel_mismatch', chk.name,
+            `הסכום השקלי של סמל ${code} בחוקה אינו תואם את הקובץ — לעדכן את ` +
+            'טבלת הסכומים (דרגה×מסלול×פעימה) ב-Progim', chk.diff, Number(code));
+        } else if (gap <= 20.0) {
+          bump('noise|' + code, 'base_noise', chk.name,
+            "פער עיגול-בסיס קטן (~₪15 'בסיס-רפאים'); לשקול יישור הרכב הבסיס " +
+            'בחוקה או קבלת אישור חשכ"ל', chk.diff, Number(code));
+        } else {
+          bump('unstable|' + code, 'unstable_rule', chk.name,
+            `כלל ${code} אינו מתאמת על מרבית נושאי הרכיב בקובץ — לבדוק אחוז/בסיס ` +
+            'בחוקה (ייתכן פעימה/סמל-בסיס חסר)', chk.diff, Number(code));
+        }
+      }
+    }
+    const out = [...recs.values()];
+    for (const r of out) r.sum = round2(r.sum);
+    out.sort((a, b) => b.count - a.count);
+    return out;
   }
 
   // --- דוח שגויים: itemized error diagnosis per non-valid slip ---------------
@@ -804,13 +875,13 @@
     return { codesSorted, codeNames, rows };
   }
 
-  const BUILD = '2026-07-15b';   // bump on each engine change; see index.html ?v=
+  const BUILD = '2026-07-15c';   // bump on each engine change; see index.html ?v=
   const api = {
     BUILD, MATCH_THRESHOLD, STATUS, round2,
     prepLookups, prepRules, getGradeBase, getVatekMultiplier, baseWithinTolerance,
     checkWorkerComponents, trustedRuleCodes, resolvePlusGrades, normalizeGradeLabel,
     diagnoseResult, reportRows, REPORT_HEADERS,
-    classifyHeader, loadGolmi, calculate, runEngine,
+    classifyHeader, loadGolmi, calculate, runEngine, buildProgimRecommendations,
     accuracyReport, batchCSV, BATCH_COLUMNS, batchRow, buildPivot,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
