@@ -2,7 +2,7 @@
 main.py — Salary Engine API v0.2 (self-contained, flat structure)
 """
 
-import os, io, time, json, tempfile
+import os, io, re, time, json, tempfile
 from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
@@ -21,6 +21,15 @@ from fastapi.responses import StreamingResponse, FileResponse, JSONResponse, Res
 from pydantic import BaseModel, Field
 
 MATCH_THRESHOLD = 1.0
+# Percentage tosafot ride the same base, which carries a small (~₪15) rounding
+# "phantom" (see the 3.6% / מנמ"ש investigations): the identical base nudge that
+# keeps the 3.6% gap under ₪1 pushes the 8–10% ones over it, so every worker
+# with a 3.6% gap also shows one on מנמ"ש/2011/2024. Judging a percent component
+# by its IMPLIED BASE (slip ÷ rate) instead of absolute ₪ clears all of a
+# worker's base-noise gaps at once, while a real rate/level error (implied base
+# off by hundreds) still fails. Threshold sits well above the noise cluster
+# (≤₪23) and well below the genuine population (>₪100).
+PERCENT_BASE_TOL = 25.0
 
 # Default seniority track (קוד דרוג): 1 = מינהלי.
 DEFAULT_TRACK = 1
@@ -194,7 +203,29 @@ TRUST_MIN_MATCH = 0.97
 TRUST_MIN_N = 20
 
 
-def check_worker_components(components, job_pct, rules, ministry_code=0) -> dict:
+def _grade_split_rates(gs, darga_label, droog):
+    """Rates admissible for a grade-tiered tosefet (מנמ"ש 2010, code 5216).
+
+    The rate steps down above a track-specific grade: מנהלי pays the higher
+    level-1 rate up to 17+ and the lower level-2 rate from 18; מח"ר (track 11)
+    steps at 38+/39. Each level keeps BOTH its historical and current rate
+    (10%/7% at level 1, 8%/5% at level 2) so past pay periods still validate.
+    Returns None when the grade can't be read — the caller then falls back to
+    the full rate set, so a missing label never manufactures a false gap."""
+    m = re.match(r"\s*\+?(\d+)", str(darga_label or ""))
+    if not m:
+        return None
+    grade = int(m.group(1))
+    try:
+        is_machar = int(droog) == gs.get("machar_track")
+    except (TypeError, ValueError):
+        is_machar = False
+    threshold = gs["machar_from_grade"] if is_machar else gs["default_from_grade"]
+    return gs["level2_rates"] if grade >= threshold else gs["level1_rates"]
+
+
+def check_worker_components(components, job_pct, rules, ministry_code=0,
+                           darga_label=None, droog=None) -> dict:
     """Check each rule-covered percentage component on one slip.
 
     components: iterable of (code, name, amount, pensionable) slip rows.
@@ -219,7 +250,16 @@ def check_worker_components(components, job_pct, rules, ministry_code=0) -> dict
             base += rule.get("base_const", 0.0) * jp
             if base <= 0:
                 continue
-            best = min(rule["rates"], key=lambda r: abs(base * r - slip))
+            # Grade-tiered tosefet (מנמ"ש 2010): restrict to the grade's own
+            # level rates so a slip paid at the wrong level's rate is caught,
+            # instead of silently accepting any of the four rates.
+            rates = rule["rates"]
+            gs = rule.get("grade_split")
+            if gs:
+                lvl = _grade_split_rates(gs, darga_label, droog)
+                if lvl:
+                    rates = lvl
+            best = min(rates, key=lambda r: abs(base * r - slip))
             expected = round(base * best, 2)
         elif rtype == "max22":
             # 4550 (הסכם 2001 אישי), per the Progim '4550' sheet: the higher of
@@ -238,10 +278,14 @@ def check_worker_components(components, job_pct, rules, ministry_code=0) -> dict
             # גמול מינהל 4983 ∈ {105, 210, 315}). Wrong amounts still fail all.
             best = min(rule["amounts"], key=lambda a: abs(a * jp - slip))
             expected = round(best * jp, 2)
+        ok = abs(expected - slip) <= MATCH_THRESHOLD
+        if rtype == "percent" and not ok and best > 0:
+            # base-relative pass: same base nudge that clears the 3.6% gap.
+            ok = abs(slip / best - base) <= PERCENT_BASE_TOL
         checks[int(code)] = {
             "slip": round(slip, 2), "expected": expected,
             "diff": round(expected - slip, 2),
-            "ok": abs(expected - slip) <= MATCH_THRESHOLD,
+            "ok": ok,
             "name": rule["name"],
         }
     return checks
@@ -718,7 +762,8 @@ def run_engine_full(workers_raw: dict, lookups: dict) -> list:
         result = calculate(worker, lookups)
         # Component checks only make sense on active single-period slips.
         checks = (check_worker_components(components, worker.job_pct or 1.0, rules,
-                                          worker.ministry_code)
+                                          worker.ministry_code,
+                                          worker.darga_label, worker.droog)
                   if result.status in (STATUS_VALID, STATUS_INVALID) else {})
         entries.append({"result": result, "comp_checks": checks})
     # Pass B — self-calibrate rule trust on this file, then attach flags.
