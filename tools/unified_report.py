@@ -184,11 +184,17 @@ def _gap_reason(code, rules):
     return "סטייה מהערך התקני של הרכיב"
 
 
-def collect(paths):
-    """Run the engine per file; return (summary, per_emp, code_gaps)."""
+def collect(paths, pure=False):
+    """Run the engine per file; return (summary, per_emp, code_gaps, recs).
+
+    pure=True runs the Progim workbook literally (no add-ons) and returns, in
+    `recs`, the aggregated recommendations of what to add to the Progim — every
+    gap the add-ons would have cleared, itemized, never silently patched.
+    """
     lookups = engine.get_lookups()
     rules = engine.get_rules()
     code_gaps = {}   # code -> {"name", "count", "sum"}
+    rec_acc = {}     # key -> aggregated recommendation across files
     files = sorted(paths, key=lambda p: (pay_month_of(p) or datetime(2099, 1, 1),
                                          Path(p).name))
     summary, per_emp = [], []
@@ -197,7 +203,16 @@ def collect(paths):
         month = d.strftime("%m/%Y") if d else _month_from_name(Path(path).stem)
         short = Path(path).stem.split("-", 1)[-1][:20] or Path(path).stem[:20]
         workers = engine.load_golmi(path)
-        entries = engine.run_engine_full(workers, lookups)
+        entries = engine.run_engine_full(workers, lookups, pure=pure)
+        if pure:
+            smart = engine.run_engine_full(workers, lookups, pure=False)
+            for r in engine.build_progim_recommendations(entries, smart, rules):
+                key = (r["category"], r["code"])
+                a = rec_acc.get(key)
+                if a is None:
+                    rec_acc[key] = dict(r)
+                else:
+                    a["count"] += r["count"]; a["sum"] = round(a["sum"] + r["sum"], 2)
         c = Counter(e["result"].status for e in entries)
         active = c["valid"] + c["invalid"]
         file_start = len(per_emp)   # breakdown is computed after the rows below
@@ -298,7 +313,8 @@ def collect(paths):
           "sum": round(g["sum"], 2), "reason": _gap_reason(code, rules)}
          for code, g in code_gaps.items()),
         key=lambda x: -x["count"])
-    return summary, per_emp, code_gap_list
+    recs = sorted(rec_acc.values(), key=lambda r: -r["count"])
+    return summary, per_emp, code_gap_list, recs
 
 
 # (key, header, width, number-format, is-gap-cell). Gap cells are red-tinted
@@ -391,7 +407,7 @@ def compute_flips(per_emp):
     return sorted(flips, key=lambda f: -f["diff"])
 
 
-def write_workbook(summary, per_emp, out_path, code_gaps=None):
+def write_workbook(summary, per_emp, out_path, code_gaps=None, recs=None):
     wb = openpyxl.Workbook()
     anom_by_file = defaultdict(float)
     anom_total = 0.0
@@ -564,6 +580,31 @@ def write_workbook(summary, per_emp, out_path, code_gaps=None):
     # ---- פר עובד ---------------------------------------------------------------
     _emp_sheet(wb, "פר עובד", per_emp, "PerEmployee", highlight_invalid=True)
 
+    # ---- המלצות ל-Progim (מצב "Progim בלבד") ---------------------------------
+    if recs:
+        CAT_HE = {"shekel_mismatch": "סכום שקלי לא תואם",
+                  "unstable_rule": "כלל לא יציב בקובץ",
+                  "base_noise": "עיגול-בסיס (~₪15)",
+                  "base_precision": "דיוק ותק/דרגה"}
+        wsr = wb.create_sheet("המלצות ל-Progim")
+        wsr.sheet_view.rightToLeft = True
+        wsr.merge_cells("A1:F1")
+        t = wsr.cell(row=1, column=1,
+                     value="המלצות לעדכון ה-Progim — פערים שהריצה הרגילה מנטרלת, "
+                           "לסקירה והחלטה (לא תוקנו אוטומטית בתוכנה)")
+        t.font = Font(bold=True, size=12, color=NAVY)
+        wsr.row_dimensions[1].height = 22
+        _header_row(wsr, 2, ["קטגוריה", "סמל", "רכיב", "מס' עובדים",
+                             "סכום פער ₪", "המלצה"], [18, 8, 22, 12, 14, 60])
+        wsr.freeze_panes = "A3"
+        for i, r in enumerate(recs, start=3):
+            wsr.cell(row=i, column=1, value=CAT_HE.get(r["category"], r["category"]))
+            wsr.cell(row=i, column=2, value=r["code"])
+            wsr.cell(row=i, column=3, value=r["name"])
+            wsr.cell(row=i, column=4, value=r["count"]).number_format = INT
+            c5 = wsr.cell(row=i, column=5, value=r["sum"]); c5.number_format = MONEY
+            c6 = wsr.cell(row=i, column=6, value=r["suggestion"]); c6.alignment = Alignment(wrap_text=True)
+
     # ---- פילוח משרדים ----------------------------------------------------------
     agg = defaultdict(lambda: Counter())
     for r in per_emp:
@@ -691,13 +732,18 @@ def main_cli():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("files", nargs="+", help="גולמי .xlsx files")
     ap.add_argument("--out", default="unified.xlsx")
+    ap.add_argument("--pure", action="store_true",
+                    help="הרצת ה-Progim כפי-שהוא (ללא תוספות התוכנה) + גיליון המלצות")
     args = ap.parse_args()
     t0 = time.time()
-    summary, per_emp, code_gaps = collect(args.files)
+    summary, per_emp, code_gaps, recs = collect(args.files, pure=args.pure)
     print(f"עיבוד: {time.time() - t0:.0f}ש · כותב workbook ({len(per_emp):,} שורות)...")
-    write_workbook(summary, per_emp, args.out, code_gaps)
+    write_workbook(summary, per_emp, args.out, code_gaps, recs=recs if args.pure else None)
     inv = sum(1 for r in per_emp if r["status"] == "invalid")
-    print(f"נכתב: {args.out} · {len(per_emp):,} רשומות · {inv:,} שגויים")
+    mode = "Progim בלבד" if args.pure else "רגיל"
+    print(f"נכתב: {args.out} · {len(per_emp):,} רשומות · {inv:,} שגויים · מצב {mode}")
+    if args.pure:
+        print(f"המלצות ל-Progim: {len(recs)} שורות")
 
 
 if __name__ == "__main__":
