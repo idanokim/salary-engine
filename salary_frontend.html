@@ -625,6 +625,24 @@ html.present .present-btn{background:#fff;color:var(--primary)}
   <!-- ============ TAB: logic / how it works ============ -->
   <section class="pane" id="pane-logic">
     <div class="logic">
+      <div class="card" id="progim-admin">
+        <div class="card-head"><h2>עדכון חוברת Progim</h2><span class="hint" id="progim-src"></span></div>
+        <div class="card-body">
+          <p class="lead">העלאת חוברת Progim חדשה (‎.xlsm‎/‎.xlsx‎) — הנתונים מחולצים ונשמרים,
+             וכל <strong>ריענון של האתר או חיבור ממחשב אחר</strong> ישתמש בקובץ האחרון שהועלה.
+             העדכון בטוח (מיזוג "הוספה-בלבד"): מוסיף סמלי-בסיס חדשים ומעדכן טבלאות שכר, בלי לפגוע באחוזים המכוילים.</p>
+          <div style="display:grid;gap:10px;max-width:520px">
+            <input type="file" id="progim-file" accept=".xlsm,.xlsx" style="font-size:.92em">
+            <input type="password" id="progim-token" placeholder="סיסמת מנהל" autocomplete="off"
+                   style="padding:8px 10px;border:1.5px solid var(--border,#d0d5dd);border-radius:8px;font-size:.95em">
+            <button type="button" class="btn" id="progim-up-btn" onclick="uploadProgim()">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+              העלה ועדכן
+            </button>
+          </div>
+          <div id="progim-result" style="margin-top:12px;font-size:.92em"></div>
+        </div>
+      </div>
       <div class="card">
         <div class="card-head"><h2>המוח של הסימולטור — איך מחושב השכר</h2></div>
         <div class="card-body">
@@ -774,6 +792,7 @@ try { console.log('SalaryEngine build:', (window.SalaryEngine||{}).BUILD); } cat
 document.addEventListener('DOMContentLoaded', () => {
   const m = document.getElementById('engine-build');
   if (m && window.SalaryEngine) m.textContent = 'engine ' + SalaryEngine.BUILD;
+  if (typeof refreshProgimStatus === 'function') refreshProgimStatus();
 });
 
 async function checkStatus(){
@@ -1068,6 +1087,39 @@ async function ensureLookups(){
   _engineLookups=SalaryEngine.prepLookups(await rl.json());
   _engineRules=rr.ok?SalaryEngine.prepRules(await rr.json()):null; // rules are optional
   return _engineLookups;
+}
+
+// ---- עדכון חוברת Progim מהאתר --------------------------------------------
+async function refreshProgimStatus(){
+  const el=document.getElementById('progim-src'); if(!el) return;
+  try{
+    const s=await (await fetch(API+'/api/progim/status')).json();
+    el.textContent=`מקור: ${s.source==='uploaded'?'הועלה':'ברירת מחדל'} · ${s.rules} כללים`;
+    const btn=document.getElementById('progim-up-btn');
+    if(!s.upload_enabled){ btn.disabled=true;
+      document.getElementById('progim-result').innerHTML='<span style="color:var(--amber)">העלאה מושבתת — יש להגדיר ADMIN_TOKEN בשרת.</span>'; }
+  }catch{ el.textContent=''; }
+}
+async function uploadProgim(){
+  const fi=document.getElementById('progim-file'), tk=document.getElementById('progim-token');
+  const out=document.getElementById('progim-result'), btn=document.getElementById('progim-up-btn');
+  if(!fi.files||!fi.files[0]){ out.innerHTML='<span style="color:var(--red)">יש לבחור קובץ Progim.</span>'; return; }
+  const fd=new FormData(); fd.append('file',fi.files[0]); fd.append('token',tk.value||'');
+  btn.disabled=true; out.innerHTML='מעבד את החוברת…';
+  try{
+    const r=await fetch(API+'/api/progim/upload',{method:'POST',body:fd});
+    const j=await r.json();
+    if(!r.ok){ out.innerHTML=`<span style="color:var(--red)">שגיאה: ${j.detail||r.status}</span>`; btn.disabled=false; return; }
+    const ch=(j.summary.base_changes||[]);
+    const chTxt=ch.length? ch.map(c=>`${c.code}: +[${c.added.join(', ')}]`).join(' · ') : 'ללא שינויי בסיס (זהה למכויל)';
+    out.innerHTML=`<div style="color:var(--green);font-weight:600">✓ עודכן: ${j.filename}</div>`+
+      `<div style="margin-top:4px">${j.summary.grades} דרגות · ${j.summary.rules} כללים · שינויי בסיס: ${chTxt}</div>`+
+      `<div style="margin-top:4px;color:var(--muted,#6b7280)">${j.note||''}</div>`;
+    _engineLookups=null; _engineRules=null;   // next run re-fetches the new data
+    await ensureLookups();
+    refreshProgimStatus();
+  }catch(e){ out.innerHTML=`<span style="color:var(--red)">שגיאת רשת: ${e.message||e}</span>`; }
+  btn.disabled=false;
 }
 async function readGolmiRows(file){
   if(typeof XLSX==='undefined') throw new Error('ספריית קריאת האקסל לא נטענה — בדוק את חיבור האינטרנט.');
