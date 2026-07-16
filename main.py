@@ -15,7 +15,8 @@ from openpyxl.cell import WriteOnlyCell
 from openpyxl.styles import PatternFill, Font
 from openpyxl.comments import Comment
 import pandas as pd
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from tools import progim_ingest  # top-level so Vercel bundles tools/*.py
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
@@ -1263,23 +1264,48 @@ def content_disposition(hebrew_name: str, ascii_fallback: str) -> str:
 app = FastAPI(title="Salary Engine API", version="0.2.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-LOOKUPS_FILE = Path(__file__).parent / "lookups.json"
-RULES_FILE = Path(__file__).parent / "component_rules.json"
+BUNDLED_LOOKUPS = Path(__file__).parent / "lookups.json"
+BUNDLED_RULES = Path(__file__).parent / "component_rules.json"
 COMPONENTS_FILE = Path(__file__).parent / "components.json"
 MINISTRIES_FILE = Path(__file__).parent / "ministries.json"
 FRONTEND_FILE = Path(__file__).parent / "index.html"
+
+# An uploaded Progim's extracted data lands here (writable at runtime). When a
+# file exists it wins over the bundled copy, so an upload is live for this
+# instance immediately; permanence across instances/deploys comes from the
+# upload also being committed back to the repo (see /api/progim/upload).
+PROGIM_DATA_DIR = Path(os.environ.get("PROGIM_DATA_DIR", "/tmp/progim_data"))
+
+def _resolved(name: str, bundled: Path) -> Path:
+    """The runtime-data copy of `name` if present, else the bundled file."""
+    runtime = PROGIM_DATA_DIR / name
+    return runtime if runtime.exists() else bundled
+
+def LOOKUPS_FILE() -> Path:
+    return _resolved("lookups.json", BUNDLED_LOOKUPS)
+
+def RULES_FILE() -> Path:
+    return _resolved("component_rules.json", BUNDLED_RULES)
+
 _lookups: Optional[dict] = None
 _rules: Optional[dict] = None
 _components: Optional[dict] = None
 _ministries: Optional[dict] = None
 
+def _invalidate_data_caches():
+    """Drop cached lookups/rules so the next access re-reads the (new) files."""
+    global _lookups, _rules
+    _lookups = None
+    _rules = None
+
 def get_rules() -> dict:
     """Component rules (החוקה) keyed by primary pay code (int)."""
     global _rules
     if _rules is None:
+        rf = RULES_FILE()
         _rules = ({int(k): v for k, v in
-                   json.loads(RULES_FILE.read_text(encoding="utf-8")).items()}
-                  if RULES_FILE.exists() else {})
+                   json.loads(rf.read_text(encoding="utf-8")).items()}
+                  if rf.exists() else {})
     return _rules
 
 def get_components() -> dict:
@@ -1299,9 +1325,10 @@ def get_ministries() -> dict:
 def get_lookups() -> dict:
     global _lookups
     if _lookups is None:
-        if not LOOKUPS_FILE.exists():
-            raise RuntimeError(f"Lookup data file not found: {LOOKUPS_FILE}")
-        _lookups = load_lookups(str(LOOKUPS_FILE))
+        lf = LOOKUPS_FILE()
+        if not lf.exists():
+            raise RuntimeError(f"Lookup data file not found: {lf}")
+        _lookups = load_lookups(str(lf))
     return _lookups
 
 @app.on_event("startup")
@@ -1406,15 +1433,83 @@ def api_lookups():
     lookups.json. Small (~40 KB), so the browser can fetch them once and run the
     whole validation engine client-side — large גולמי files are then processed
     locally and never uploaded, sidestepping serverless request-body limits."""
-    return json.loads(LOOKUPS_FILE.read_text(encoding="utf-8"))
+    return json.loads(LOOKUPS_FILE().read_text(encoding="utf-8"))
 
 @app.get("/api/rules")
 def api_rules():
     """Component rules (החוקה) extracted from the Progim workbook — percentage
     bases/rates per pay code plus the manual (ידני) codes. Used by the browser
     engine for client-side component validation."""
-    return (json.loads(RULES_FILE.read_text(encoding="utf-8"))
-            if RULES_FILE.exists() else {})
+    rf = RULES_FILE()
+    return (json.loads(rf.read_text(encoding="utf-8")) if rf.exists() else {})
+
+
+# ---------------------------------------------------------------------------
+# עדכון ה-Progim מהאתר — admin uploads a new workbook; the engine data is
+# regenerated (safe add-only merge) and persisted to PROGIM_DATA_DIR so every
+# refresh, and every other computer hitting the same instance, uses the last
+# uploaded file. Point PROGIM_DATA_DIR at a persistent disk (Render) for it to
+# survive restarts and be shared across all clients. (An automated commit-back
+# to the git repo — the only cross-instance option on Vercel's read-only FS — is
+# deliberately NOT wired here: it would push to the protected branch at runtime,
+# which must stay a reviewed action. See docs/PROGIM_UPDATE.md.)
+# ---------------------------------------------------------------------------
+def _persisted() -> bool:
+    return (PROGIM_DATA_DIR / "component_rules.json").exists()
+
+
+@app.get("/api/progim/status")
+def progim_status():
+    """Which Progim the engine is currently serving — the frontend shows the
+    source and gates the upload UI on whether ADMIN_TOKEN is configured."""
+    rf = RULES_FILE()
+    n = len(json.loads(rf.read_text(encoding="utf-8"))) if rf.exists() else 0
+    return {"source": "uploaded" if _persisted() else "bundled", "rules": n,
+            "upload_enabled": bool(os.environ.get("ADMIN_TOKEN")),
+            "data_dir": str(PROGIM_DATA_DIR)}
+
+
+@app.post("/api/progim/upload")
+async def progim_upload(file: UploadFile = File(...), token: str = Form("")):
+    """Ingest an uploaded Progim (.xlsm/.xlsx): regenerate lookups + rules via a
+    safe add-only merge and persist them to PROGIM_DATA_DIR, so subsequent loads
+    (this instance) serve the uploaded file."""
+    admin = os.environ.get("ADMIN_TOKEN")
+    if not admin:
+        raise HTTPException(503, "העלאת Progim מושבתת — יש להגדיר ADMIN_TOKEN בשרת")
+    if token != admin:
+        raise HTTPException(401, "סיסמת מנהל שגויה")
+    raw = await file.read()
+    if len(raw) > 25 * 1024 * 1024:
+        raise HTTPException(413, "הקובץ גדול מדי (מעל 25MB)")
+
+    PROGIM_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = PROGIM_DATA_DIR / "Progim_upload.xlsx"
+    tmp.write_bytes(raw)
+
+    # Ingest onto the CURRENT live rules (cumulative, add-only merge).
+    cur = json.loads(RULES_FILE().read_text(encoding="utf-8"))
+    try:
+        lookups, rules, summary = progim_ingest.ingest(str(tmp), cur)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, f"קובץ ה-Progim לא נקרא/לא תקין: {str(e)[:200]}")
+    if summary["rules"] < len(cur) or summary["grades"] < 50:
+        raise HTTPException(400, "בדיקת שפיות נכשלה (ירידה במספר הכללים/דרגות) — "
+                                 "כנראה קובץ שגוי; העדכון בוטל")
+
+    (PROGIM_DATA_DIR / "lookups.json").write_text(
+        json.dumps(lookups, ensure_ascii=False), encoding="utf-8")
+    (PROGIM_DATA_DIR / "component_rules.json").write_text(
+        json.dumps(rules, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    _invalidate_data_caches()
+
+    persistent = str(PROGIM_DATA_DIR).startswith(("/var/", "/data", "/mnt"))
+    note = ("נשמר בשרת ופעיל כעת. הקובץ ישמש כל ריענון/מחשב שמגיע לאותו מופע. "
+            + ("השרת מוגדר עם דיסק קבוע — יישמר גם אחרי הפעלה מחדש."
+               if persistent else
+               "לשמירה קבועה בין הפעלות/מופעים — יש להגדיר דיסק קבוע (Render) "
+               "או להטמיע את הקבצים ב-repo."))
+    return {"ok": True, "filename": file.filename, "summary": summary, "note": note}
 
 @app.get("/api/grades")
 def list_grades():

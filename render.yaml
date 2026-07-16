@@ -7,4 +7,13 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
+      # Uploaded Progim data lands on the persistent disk, so it survives
+      # restarts and is shared across every request/computer. Set ADMIN_TOKEN
+      # (a secret) in the dashboard to enable the upload UI.
+      - key: PROGIM_DATA_DIR
+        value: /var/data/progim
     healthCheckPath: /healthz
+    disk:
+      name: progim-data
+      mountPath: /var/data
+      sizeGB: 1
