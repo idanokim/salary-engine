@@ -109,14 +109,6 @@ def pay_month_of(path):
     return month
 
 
-# Current-workbook rates (Progim 13.07.2026). When a slip legitimately matched
-# an EARLIER official rate, that is a difference between the software and the
-# workbook — the Progim only knows the current rate; the software carries the
-# agreements' historical phase-ins.
-CURRENT_RATES = {4544: 0.036, 4934: 0.05, 4994: 0.0725, 5401: 0.03875,
-                 5216: 0.08, 741: 0.30, 5533: 0.05}
-
-
 def _progim_delta(entry, raw_first, rules):
     """Why the software's verdict differs from a plain current-Progim run —
     one worker's notes, joined. Empty when the two agree exactly."""
@@ -145,24 +137,10 @@ def _progim_delta(entry, raw_first, rules):
         if bc and abs(bc - bs) > 1.0:
             notes.append(f"הבסיס אושר דרך חלון עיגול הוותק (±0.125 שנה) — "
                          f"חישוב נקודתי כמו ב-Progim היה מראה פער {round(bc - bs, 2)} ₪")
-    job = r.job_pct or 1.0
-    for code, cur in CURRENT_RATES.items():
-        rule = rules.get(code)
-        if not rule or rule.get("type") != "percent":
-            continue
-        slip = sum(amt[c] for c in rule["codes"])
-        if slip <= 0.01:
-            continue
-        base = sum(amt[c] for c in rule["base_codes"])
-        base += rule.get("base_const", 0.0) * job
-        if base <= 0:
-            continue
-        rate = slip / base
-        matched = any(abs(base * rr - slip) <= 1.0 for rr in rule["rates"])
-        if matched and abs(rate - cur) > 0.0015:
-            notes.append(f"סמל {code}: שולם לפי אחוז תקופתי {rate * 100:.2f}% — "
-                         f"בחוברת הנוכחית {cur * 100:.2f}% (ה-Progim מכיר רק את "
-                         "האחוז הנוכחי; התוכנה מכירה את כל הפעימות)")
+    # NOTE: a component paid at an earlier official phase-in rate is NOT listed
+    # here — the Progim resolves the rate by חודש פרישה from its own pulse
+    # tables (heskem 2016/2023, tos kibutzi, MANMASH 2010), so a period rate is
+    # not a difference between the software and the workbook.
     return "; ".join(notes)
 
 
