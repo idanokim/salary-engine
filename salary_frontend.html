@@ -1188,9 +1188,6 @@ async function runAccuracy(input){
 // ---- Bulk: several files → one unified workbook -----------------------------
 let _bulkData=null;   // {perFile:[{name,month,workers,valid,invalid,no_base,multi,acc}], perEmp:[...]}
 const BULK_STATUS_HE={valid:'תקין',invalid:'שגוי',no_base:'ללא שכר בסיס פעיל',multi_period:'רטרו / רב-תקופתי'};
-// Current-workbook rates (Progim 13.07.2026); an earlier matched rate is a
-// software↔workbook difference (the software carries the phase-ins).
-const CURRENT_RATES={4544:0.036,4934:0.05,4994:0.0725,5401:0.03875,5216:0.08,741:0.30,5533:0.05};
 // Why the software's verdict differs from a plain current-Progim run.
 function progimDelta(r, rawFirst, rules){
   const notes=[]; const amt=new Map();
@@ -1211,18 +1208,10 @@ function progimDelta(r, rawFirst, rules){
     for(const c of r.components){ if(c.code===1||c.code===2||c.code===10002) bs+=(c.expected||0); if(c.calculated) bc+=(c.amount||0);}
     if(bc && Math.abs(bc-bs)>1) notes.push(`הבסיס אושר דרך חלון עיגול הוותק (±0.125 שנה) — חישוב נקודתי כמו ב-Progim היה מראה פער ${SalaryEngine.round2(bc-bs)} ₪`);
   }
-  const job=r.job_pct||1;
-  for(const code in CURRENT_RATES){
-    const rule=rules&&rules[code]; if(!rule||rule.type!=='percent') continue;
-    let slip=0; for(const c of rule.codes) slip+=(amt.get(c)||0);
-    if(slip<=0.01) continue;
-    let base=0; for(const c of rule.base_codes) base+=(amt.get(c)||0);
-    base+=(rule.base_const||0)*job; if(base<=0) continue;
-    const rate=slip/base, cur=CURRENT_RATES[code];
-    const matched=rule.rates.some(rr=>Math.abs(base*rr-slip)<=1);
-    if(matched && Math.abs(rate-cur)>0.0015)
-      notes.push(`סמל ${code}: שולם לפי אחוז תקופתי ${(rate*100).toFixed(2)}% — בחוברת הנוכחית ${(cur*100).toFixed(2)}% (ה-Progim מכיר רק את האחוז הנוכחי; התוכנה מכירה את כל הפעימות)`);
-  }
+  // NOTE: a component paid at an earlier official phase-in rate is NOT listed
+  // here — the Progim resolves the rate by חודש פרישה from its own pulse
+  // tables (heskem 2016/2023, tos kibutzi, MANMASH 2010), so a period rate is
+  // not a difference between the software and the workbook.
   return notes.join('; ');
 }
 
