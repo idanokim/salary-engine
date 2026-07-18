@@ -133,6 +133,12 @@
         let base = 0;
         for (const c of rule.base_codes) base += (amounts.get(c) || 0);
         base += (rule.base_const || 0) * jp;
+        // Weighted negative terms per the SACHAR formulas, e.g. 5401/5533
+        // subtract 4935 (תוספת אמון) at the 4934+4994 combined rate:
+        // −CY11×(CV7+CW7).
+        if (rule.base_minus) {
+          for (const mc in rule.base_minus) base -= (amounts.get(Number(mc)) || 0) * rule.base_minus[mc];
+        }
         if (base <= 0) continue;
         // Grade-tiered tosefet (מנמ"ש 2010): restrict to the grade's own level
         // rates so a slip paid at the wrong level's rate is caught, instead of
@@ -150,19 +156,25 @@
         okOverride = Math.abs(expected - slip) <= MATCH_THRESHOLD ||
           (!pure && best > 0 && Math.abs(slip / best - base) <= PERCENT_BASE_TOL);
       } else if (rule.type === 'max22') {
-        // 4550: the higher of 22% × (משולב + הסכם 99) minus deductions, and the
-        // ministry floor × job% (Progim '4550' sheet). Self-calibration keeps
-        // this silent on files where the personal/frozen amounts dominate.
+        // 4550, per the Progim '4550' sheet formula D11: MAX(22% × (משולב +
+        // הסכם 99) − הפחתות, 0, רצפת המשרד − הפחתות) — the deductions come
+        // off the floor branch too. Self-calibration keeps this silent on
+        // files where the personal/frozen amounts dominate.
         let base = 0;
         for (const c of rule.base_codes) base += (amounts.get(c) || 0);
         if (base <= 0) continue;
         let ded = 0;
         for (const c of rule.deductions) ded += (amounts.get(c) || 0);
         const floor = (rule.floors[String(ministryCode || 0)] || rule.floor_default) * jp;
-        expected = round2(Math.max(rule.pct * base - ded, floor));
+        expected = round2(Math.max(rule.pct * base - ded, 0, floor - ded));
       } else {
         // shekel: one of a fixed set of flat amounts × job% (e.g. גמול מינהל
         // 4983 ∈ {105,210,315}). The closest admissible amount is the standard.
+        // Month-dependent sets (5402/5524 — the amount tracks the worker's
+        // retirement month, absent from the file) are handled by the per-file
+        // population check (checkShekelPopulation); the strict table check
+        // runs only in pure (literal-Progim) mode.
+        if (rule.month_dependent && !pure) continue;
         let best = rule.amounts[0];
         for (const a of rule.amounts) if (Math.abs(a * jp - slip) < Math.abs(best * jp - slip)) best = a;
         expected = round2(best * jp);
@@ -174,6 +186,91 @@
       };
     }
     return checks;
+  }
+
+  // תוספות שקליות תלויות-חודש (5402/5524) — mirror of check_shekel_population
+  // in main.py (keep in sync): the admissible amount depends on the worker's
+  // retirement month, which the file does not carry, so the standard is the
+  // agreement table PLUS every value shared by ≥3 workers in the file. Only
+  // isolated deviants are flagged, and only with enough holders to calibrate.
+  const SHEKEL_POP_MIN_CLUSTER = 3;
+  const SHEKEL_POP_NOTE = 'סכום שאינו בטבלת ההסכם ואינו ערך קבוצתי בקובץ — חשד להפרשי רטרו/סכום חריג';
+
+  function checkShekelPopulation(results, rules) {
+    const out = new Map();
+    for (const k in rules) {
+      const rule = rules[k];
+      if (rule.type !== 'shekel' || !rule.month_dependent) continue;
+      const codes = rule.codes.map(Number);
+      const table = (rule.amounts || []).map(Number);
+      const per = new Map(), clusters = new Map();
+      for (let i = 0; i < results.length; i++) {
+        const r = results[i];
+        if (r.status !== STATUS.VALID && r.status !== STATUS.INVALID) continue;
+        const amt = new Map();
+        for (const c of r.components) amt.set(c.code, (amt.get(c.code) || 0) + (c.expected || 0));
+        const v = codes.reduce((s, c) => s + (amt.get(c) || 0), 0);
+        if (Math.abs(v) < 0.01) continue;
+        const job = r.job_pct || 1.0;
+        const norm = round(v / job, 1);
+        per.set(i, { v, norm, job });
+        clusters.set(norm, (clusters.get(norm) || 0) + 1);
+      }
+      if (per.size < TRUST_MIN_N) continue;
+      const admissible = new Set();
+      for (const [n, cnt] of clusters) if (cnt >= SHEKEL_POP_MIN_CLUSTER) admissible.add(n);
+      for (const [i, { v, norm, job }] of per) {
+        if (admissible.has(norm)) continue;
+        if (table.some((a) => Math.abs(v - a * job) <= MATCH_THRESHOLD)) continue;
+        let best = table.length ? table[0] : 0;
+        for (const a of table) if (Math.abs(a * job - v) < Math.abs(best * job - v)) best = a;
+        const exp = round2(best * job);
+        if (!out.has(i)) out.set(i, {});
+        out.get(i)[Number(k)] = {
+          slip: round2(v), expected: exp, diff: round2(exp - v), ok: false,
+          name: rule.name, note: SHEKEL_POP_NOTE,
+        };
+      }
+    }
+    return out;
+  }
+
+  // --- הפרשי רטרו ברכיבים ------------------------------------------------------
+  // A slip the monthly Progim formula cannot represent (mirror of
+  // retro_suspect_reason in main.py; keep in sync): (a) הפרש / injury-pay
+  // (ד. פגיעה בעבודה) rows on the slip, (b) a rule-covered component reversed
+  // to a negative total, or (c) every flagged component carrying ≥2 months'
+  // worth of its expected value. These are payment-timing artifacts, not
+  // simulator gaps — the dashboard funnel separates them from real errors.
+  const RETRO_ROW_RE = /הפרש|פגיעה בעבודה|ד\.\s*פג/;
+
+  function ruleCoveredCodes(rules) {
+    const covered = new Set([647, 667, 897, 4268, 4269]);
+    for (const k in (rules || {})) {
+      const rule = rules[k];
+      if (rule.type === 'percent' || rule.type === 'shekel' || rule.type === 'max22' || rule.type === 'minimum') {
+        for (const c of rule.codes) covered.add(Number(c));
+      }
+    }
+    return covered;
+  }
+
+  function retroSuspectReason(rows, compFlags, covered) {
+    const amt = new Map();
+    for (const r of rows) {
+      const c = Number(r.comp_code);
+      if (!Number.isNaN(c)) amt.set(c, (amt.get(c) || 0) + (r.amount || 0));
+      if (RETRO_ROW_RE.test(String(r.comp_name || '')) && Math.abs(r.amount || 0) > 1)
+        return 'רכיבי הפרשים/פגיעה בעבודה בתלוש — חודש תיקוני שכר';
+    }
+    for (const [c, v] of amt)
+      if (covered.has(c) && v < -0.01) return 'רכיב הסכם בסכום שלילי — היפוך/קיזוז רטרואקטיבי';
+    const keys = Object.keys(compFlags || {});
+    if (keys.length && keys.every((k) => {
+      const f = compFlags[k];
+      return (f.expected || 0) > 1 && (f.slip || 0) >= 2 * f.expected - MATCH_THRESHOLD;
+    })) return 'רכיבים בכפולות מהערך החודשי — חשד להצטברות רטרו';
+    return null;
   }
 
   // גמולי השתלמות — population-calibrated checks (mirror of
@@ -526,6 +623,7 @@
     // that would clear a gap are surfaced via buildProgimRecommendations.
     const results = [];
     const allChecks = [];
+    const allRows = [];
     // Pass A0 — resolve dropped-'+' grade labels from the file's own population.
     const plusRemap = pure ? new Map() : resolvePlusGrades(lk, workers);
     // Pass A — base validation + חוקה component checks per worker.
@@ -538,6 +636,7 @@
       r.base_ok = active && r.status === STATUS.VALID;  // base-only verdict (pre pass B)
       const checks = (rules && active) ? checkWorkerComponents(rows, r.job_pct, rules, r.ministry_code, r.darga_label, r.droog, pure) : {};
       allChecks.push(checks);
+      allRows.push(rows);
       results.push(r);
     }
     if (!rules) {
@@ -546,16 +645,18 @@
     }
     // Pass B — attach flags. Pure mode trusts every rule as written and skips
     // the gmul/minimum population reconstructions; otherwise self-calibrate.
-    let trusted, gmulFlags, minFlags;
+    let trusted, gmulFlags, minFlags, shekelFlags;
     if (pure) {
       trusted = new Set();
       for (const checks of allChecks) for (const code in checks) trusted.add(code);
-      gmulFlags = new Map(); minFlags = new Map();
+      gmulFlags = new Map(); minFlags = new Map(); shekelFlags = new Map();
     } else {
       trusted = trustedRuleCodes(allChecks, rules);
       gmulFlags = checkGmulPopulation(results);
       minFlags = checkMinimumPopulation(results, rules);
+      shekelFlags = checkShekelPopulation(results, rules);
     }
+    const covered = ruleCoveredCodes(rules);
     for (let i = 0; i < results.length; i++) {
       const r = results[i], checks = allChecks[i];
       for (const code in checks) {
@@ -563,6 +664,10 @@
       }
       Object.assign(r.comp_flags, gmulFlags.get(i) || {});
       Object.assign(r.comp_flags, minFlags.get(i) || {});
+      Object.assign(r.comp_flags, shekelFlags.get(i) || {});
+      // הפרשי רטרו ברכיבים — payment-timing artifacts the monthly formula
+      // cannot represent; the dashboard separates them from real errors.
+      r.retro_suspect = retroSuspectReason(allRows[i], r.comp_flags, covered);
       const flagged = Object.keys(r.comp_flags);
       if (flagged.length) {
         if (r.status === STATUS.VALID) { r.status = STATUS.INVALID; r.total_match = false; }

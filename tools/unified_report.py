@@ -243,6 +243,15 @@ def collect(paths, pure=False):
                     err_cat = "brich"
                 elif 4983 in flags:
                     err_cat = "mnhal"
+                elif 1699 in flags or 5260 in flags:
+                    # השלמת מינימום — a population-inferred add-on beyond the
+                    # literal Progim (pure mode never flags it); own bucket.
+                    err_cat = "minimum"
+                elif e.get("retro_suspect"):
+                    # הפרשי רטרו ברכיבים — payment-timing artifacts (negative
+                    # agreement components, הפרש/injury rows, ≥2-month
+                    # multiples); not simulator gaps.
+                    err_cat = "retro"
                 else:
                     err_cat = "real"
                 # Per-code gap tally for the exec dashboard: base (when off) plus
@@ -273,7 +282,9 @@ def collect(paths, pure=False):
                 "flags": "; ".join(
                     f"{k} ({v['name']}): {v['slip']} במקום {v['expected']}"
                     for k, v in sorted(flags.items())),
-                "diag": "; ".join(r.errors),
+                "diag": "; ".join(
+                    list(r.errors) + ([e["retro_suspect"]]
+                                      if e.get("retro_suspect") else [])),
                 "progim_delta": _progim_delta(e, raw_first, rules),
             })
         # Full-time breakdown for the dashboard: part-timers are neutralized,
@@ -287,12 +298,13 @@ def collect(paths, pure=False):
         s["ft_valid"] = sum(1 for x in ft if x["status"] == "valid")
         for cat, key in (("student", "inv_student"), ("base", "inv_base"),
                          ("gmul", "inv_gmul"), ("brich", "inv_brich"),
-                         ("mnhal", "inv_mnhal"), ("real", "inv_real")):
+                         ("mnhal", "inv_mnhal"), ("minimum", "inv_minimum"),
+                         ("retro", "inv_retro"), ("real", "inv_real")):
             s[key] = sum(1 for x in ft
                          if x["status"] == "invalid" and x["err_cat"] == cat)
         ft_active = s["ft_valid"] + sum(
             s[k] for k in ("inv_student", "inv_base", "inv_gmul", "inv_brich",
-                           "inv_mnhal", "inv_real"))
+                           "inv_mnhal", "inv_minimum", "inv_retro", "inv_real"))
         s["real_pct"] = round(s["inv_real"] / ft_active * 100, 2) if ft_active else 0.0
     code_gap_list = sorted(
         ({"code": code, "name": g["name"], "count": g["count"],
@@ -417,8 +429,8 @@ def write_workbook(summary, per_emp, out_path, code_gaps=None, recs=None):
     s.value = (f"{len(summary)} קבצים · הופק "
                f"{datetime.now().strftime('%d/%m/%Y %H:%M')} · "
                "מנטרל: משרה חלקית ← ותק סטודנט ← בסיס ← גמול השתלמות ← "
-               "דריכות בי\"ח ← גמול מנהל. הנותר = שגיאה אמיתית לתיקון. "
-               "(רטרו רב-תקופתי = מחוץ לשרשרת)")
+               "דריכות בי\"ח ← גמול מנהל ← השלמת מינימום ← הפרשי רטרו. "
+               "הנותר = שגיאה אמיתית לתיקון. (רטרו רב-תקופתי = מחוץ לשרשרת)")
     s.font = Font(size=10, color=MUTED)
 
     tot = Counter()
@@ -430,11 +442,12 @@ def write_workbook(summary, per_emp, out_path, code_gaps=None, recs=None):
     _kpi(ws, 4, 1, 1, "סה\"כ עובדים", tot["workers"], fmt=INT)
     _kpi(ws, 4, 2, 1, "תקינים", tot["valid"], GOOD_TXT, INT)
     for k in ("part_time", "ft", "ft_valid", "inv_student", "inv_base",
-              "inv_gmul", "inv_brich", "inv_mnhal", "inv_real"):
+              "inv_gmul", "inv_brich", "inv_mnhal", "inv_minimum",
+              "inv_retro", "inv_real"):
         tot[k] = sum(r.get(k, 0) for r in summary)
     _ft_active = (tot["ft_valid"] + tot["inv_student"] + tot["inv_base"]
                   + tot["inv_gmul"] + tot["inv_brich"] + tot["inv_mnhal"]
-                  + tot["inv_real"])
+                  + tot["inv_minimum"] + tot["inv_retro"] + tot["inv_real"])
     _real_pct = (tot["inv_real"] / _ft_active) if _ft_active else 0.0
     _kpi(ws, 4, 3, 1, "שגויים אמיתיים (מלאה)", tot["inv_real"], BAD_TXT, INT)
     _kpi(ws, 4, 4, 1, "% שגויים אמיתיים", _real_pct,
@@ -445,33 +458,36 @@ def write_workbook(summary, per_emp, out_path, code_gaps=None, recs=None):
 
     head_r = 7
     # Neutralization chain (each invalid full-timer counts once, in this order):
-    # base → gmul → דריכות → גמול מנהל. What remains is the REAL error count.
-    # רטרו/רב-תקופתי is a SEPARATE class (base code appears twice — the slip
-    # merges two pay periods), not part of the chain, shown for reference only.
+    # base → gmul → דריכות → גמול מנהל → הפרשי רטרו. What remains is the REAL
+    # error count. הפרשי רטרו ברכיבים = slips the monthly formula cannot
+    # represent (negative agreement components, הפרש/injury-pay rows, ≥2-month
+    # multiples). רטרו/רב-תקופתי is a SEPARATE class (base code appears twice —
+    # the slip merges two pay periods), not part of the chain, for reference.
     labels = ["חודש שכר", "קובץ", "עובדים", "משרה חלקית", "משרה מלאה", "תקין (מלאה)",
               "שגויי ותק סטודנט", "שגויי בסיס", "שגויי גמול", "שגויי דריכות",
-              "שגויי גמול מנהל", "שגויים אמיתיים", "ללא בסיס", "רטרו רב-תקופתי",
-              "% שגויים אמיתיים"]
+              "שגויי גמול מנהל", "שגויי השלמת מינימום", "הפרשי רטרו ברכיבים",
+              "שגויים אמיתיים", "ללא בסיס", "רטרו רב-תקופתי", "% שגויים אמיתיים"]
     _header_row(ws, head_r, labels,
-                [11, 18, 10, 10, 10, 11, 11, 10, 10, 10, 11, 12, 9, 11, 13])
+                [11, 18, 10, 10, 10, 11, 11, 10, 10, 10, 11, 12, 12, 12, 9, 11, 13])
     for i, r in enumerate(summary, start=head_r + 1):
         vals = [r["month"], r["file"], r["workers"], r.get("part_time", 0),
                 r.get("ft", 0), r.get("ft_valid", 0), r.get("inv_student", 0),
                 r.get("inv_base", 0), r.get("inv_gmul", 0), r.get("inv_brich", 0),
-                r.get("inv_mnhal", 0), r.get("inv_real", 0), r["no_base"],
-                r["multi"], r.get("real_pct", 0.0) / 100]
+                r.get("inv_mnhal", 0), r.get("inv_minimum", 0),
+                r.get("inv_retro", 0), r.get("inv_real", 0),
+                r["no_base"], r["multi"], r.get("real_pct", 0.0) / 100]
         for c_i, v in enumerate(vals, start=1):
             cell = ws.cell(row=i, column=c_i, value=v)
             cell.border = THIN_BOX
-            if 3 <= c_i <= 14:
+            if 3 <= c_i <= 16:
                 cell.number_format = INT
             if c_i == 6:
                 cell.font = Font(color=GOOD_TXT)
-            if c_i in (7, 8, 9, 10, 11) and v:
+            if c_i in (7, 8, 9, 10, 11, 12, 13) and v:
                 cell.font = Font(color=WARN_TXT)
-            if c_i == 12 and v:
+            if c_i == 14 and v:
                 cell.font = Font(color=BAD_TXT, bold=True)
-            if c_i == 15:
+            if c_i == 17:
                 cell.number_format = "0.00%"
     last = head_r + len(summary)
     trow = last + 1
@@ -479,19 +495,20 @@ def write_workbook(summary, per_emp, out_path, code_gaps=None, recs=None):
     real_pct_tot = _real_pct
     tvals = ["סה\"כ", "", tot["workers"], tot["part_time"], tot["ft"],
              tot["ft_valid"], tot["inv_student"], tot["inv_base"], tot["inv_gmul"],
-             tot["inv_brich"], tot["inv_mnhal"], tot["inv_real"], tot["no_base"],
-             tot["multi"], real_pct_tot]
+             tot["inv_brich"], tot["inv_mnhal"], tot["inv_minimum"],
+             tot["inv_retro"], tot["inv_real"],
+             tot["no_base"], tot["multi"], real_pct_tot]
     for c_i, v in enumerate(tvals, start=1):
         cell = ws.cell(row=trow, column=c_i, value=v)
         cell.font = Font(bold=True)
         cell.border = Border(top=Side(style="double", color=NAVY))
-        if 3 <= c_i <= 14:
+        if 3 <= c_i <= 16:
             cell.number_format = INT
-        if c_i == 15:
+        if c_i == 17:
             cell.number_format = "0.00%"
-        if c_i == 12:
+        if c_i == 14:
             cell.font = Font(bold=True, color=BAD_TXT)
-    rng = f"O{head_r + 1}:O{last}"    # % שגויים אמיתיים
+    rng = f"Q{head_r + 1}:Q{last}"    # % שגויים אמיתיים
     ws.conditional_formatting.add(rng, CellIsRule(
         operator="lessThanOrEqual", formula=["0.01"],
         font=Font(color=GOOD_TXT), fill=PatternFill("solid", fgColor=GOOD_BG)))
@@ -506,13 +523,13 @@ def write_workbook(summary, per_emp, out_path, code_gaps=None, recs=None):
         DataBarRule(start_type="num", start_value=0, end_type="max",
                     color=BAR_BLUE, showValue=True))
     ws.conditional_formatting.add(
-        f"L{head_r + 1}:L{last}",          # שגויים אמיתיים
+        f"N{head_r + 1}:N{last}",          # שגויים אמיתיים
         DataBarRule(start_type="num", start_value=0, end_type="max",
                     color="FFD03B3B", showValue=True))
 
     # ---- פערים לפי סמל שכר (a second table, to the right of the per-file one) ---
     if code_gaps:
-        cbase = 17   # column Q (leaves a gap after the 15-column per-file table)
+        cbase = 19   # column S (leaves a gap after the 17-column per-file table)
         heads = ["סמל", "שם רכיב", "כמות פערים", "שווי ₪", "הסיבה לפער"]
         widths = [9, 22, 12, 13, 40]
         for j, (h, w) in enumerate(zip(heads, widths)):
@@ -544,6 +561,22 @@ def write_workbook(summary, per_emp, out_path, code_gaps=None, recs=None):
            and r["full_time"] and r["err_cat"] == "real"]
     inv.sort(key=_anomaly, reverse=True)
     _emp_sheet(wb, "שגויים לבדיקה", inv, "Invalids", highlight_invalid=False)
+
+    # ---- הפרשי רטרו ברכיבים (מי הם — לשקיפות מלאה) -------------------------------
+    retro_rows = [r for r in per_emp if r["status"] == "invalid"
+                  and r["full_time"] and r["err_cat"] == "retro"]
+    if retro_rows:
+        retro_rows.sort(key=_anomaly, reverse=True)
+        _emp_sheet(wb, "הפרשי רטרו ברכיבים", retro_rows, "RetroComp",
+                   highlight_invalid=False)
+
+    # ---- שגויי השלמת מינימום (add-on מעבר לחוקה — מופרד מהשגויים האמיתיים) ------
+    min_rows = [r for r in per_emp if r["status"] == "invalid"
+                and r["full_time"] and r["err_cat"] == "minimum"]
+    if min_rows:
+        min_rows.sort(key=_anomaly, reverse=True)
+        _emp_sheet(wb, "שגויי השלמת מינימום", min_rows, "MinComp",
+                   highlight_invalid=False)
 
     # ---- שינויי סטטוס בין חודשים -------------------------------------------------
     flips = compute_flips(per_emp)

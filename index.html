@@ -1284,12 +1284,16 @@ async function runBulk(files){
           const baseDiff=baseCalc?SalaryEngine.round2(baseCalc-baseSlip):null;
           // Component gaps beside the base gap: גמול א'(667), ב'(897), דריכות בי"ח(798).
           const gap=(c)=>gf[c]?SalaryEngine.round2(gf[c].slip-gf[c].expected):null;
-          const diag=(r.findings||[]).map(x=>x.category+(x.note?' — '+x.note:'')).join('; ');
+          const diag=[...(r.findings||[]).map(x=>x.category+(x.note?' — '+x.note:'')),
+                      ...(r.retro_suspect?[r.retro_suspect]:[])].join('; ');
           const delta=progimDelta(r,rawFirsts[ri],_engineRules);
           const fullTime=(r.job_pct||1)>=0.999;
           // One bucket per invalid full-timer: ותק סטודנט (5527) > base > gmul >
-          // דריכות > גמול מנהל > אמיתי (no double-count). Student vetek makes the
-          // regular-vetek base recompute expectedly off — a known cause, first.
+          // דריכות > גמול מנהל > הפרשי רטרו > אמיתי (no double-count). Student
+          // vetek makes the regular-vetek base recompute expectedly off — a
+          // known cause, first. הפרשי רטרו (retro_suspect, from the engine):
+          // negative agreement components, הפרש/injury rows, or ≥2-month
+          // multiples — payment-timing artifacts, not simulator gaps.
           const hasStudent=(r.components||[]).some(c=>c.code===5527&&(c.amount||0)!==0);
           let errCat=null;
           if(r.status==='invalid'){
@@ -1298,6 +1302,8 @@ async function runBulk(files){
             else if(gf[667]||gf[897]) errCat='gmul';
             else if(gf[798]) errCat='brich';
             else if(gf[4983]) errCat='mnhal';
+            else if(gf[1699]||gf[5260]) errCat='minimum';
+            else if(r.retro_suspect) errCat='retro';
             else errCat='real';
             // Per-code gap tally for the exec summary: the base (when off) plus
             // every flagged component, each with its ₪ magnitude.
@@ -1321,12 +1327,12 @@ async function runBulk(files){
         const ft=fr.filter(x=>x[FT_IDX]);
         const cnt=(cat)=>ft.filter(x=>x[STATUS_RAW_IDX]==='invalid'&&x[ERRCAT_IDX]===cat).length;
         const ftValid=ft.filter(x=>x[STATUS_RAW_IDX]==='valid').length;
-        const invStudent=cnt('student'),invBase=cnt('base'),invGmul=cnt('gmul'),invBrich=cnt('brich'),invMnhal=cnt('mnhal'),invReal=cnt('real');
-        const ftAct=ftValid+invStudent+invBase+invGmul+invBrich+invMnhal+invReal;
+        const invStudent=cnt('student'),invBase=cnt('base'),invGmul=cnt('gmul'),invBrich=cnt('brich'),invMnhal=cnt('mnhal'),invMinimum=cnt('minimum'),invRetro=cnt('retro'),invReal=cnt('real');
+        const ftAct=ftValid+invStudent+invBase+invGmul+invBrich+invMnhal+invMinimum+invRetro+invReal;
         perFile.push({name:f.name.replace(/\.xlsx$/i,''), month, workers:results.length,
           valid:v, invalid:inv, no_base:nb, multi:mp, acc:active?SalaryEngine.round2(v/active*100):0,
           part_time:fr.length-ft.length, ft:ft.length, ft_valid:ftValid,
-          inv_student:invStudent, inv_base:invBase, inv_gmul:invGmul, inv_brich:invBrich, inv_mnhal:invMnhal, inv_real:invReal,
+          inv_student:invStudent, inv_base:invBase, inv_gmul:invGmul, inv_brich:invBrich, inv_mnhal:invMnhal, inv_minimum:invMinimum, inv_retro:invRetro, inv_real:invReal,
           real_pct:ftAct?SalaryEngine.round2(invReal/ftAct*100):0});
       }catch(fe){
         failed.push({name:f.name, msg:fe.message||String(fe)});
@@ -1619,18 +1625,18 @@ async function downloadUnified(){
     const wb=new ExcelJS.Workbook();
     // ---- לוח בקרה ----------------------------------------------------------
     const ws=wb.addWorksheet('לוח בקרה',{views:[{rightToLeft:true,showGridLines:false}]});
-    ws.mergeCells('A1:O1');
+    ws.mergeCells('A1:Q1');
     const title=ws.getCell('A1'); title.value='בדיקת התאמת תלושים — דוח מאוחד';
     title.font={size:16,bold:true,color:{argb:XL.NAVY}};
-    ws.mergeCells('A2:O2');
+    ws.mergeCells('A2:Q2');
     const sub=ws.getCell('A2');
-    sub.value=`${_bulkData.perFile.length} קבצים · הופק ${new Date().toLocaleDateString('he-IL')} · מנטרל: משרה חלקית ← ותק סטודנט ← בסיס ← גמול השתלמות ← דריכות בי"ח ← גמול מנהל. הנותר = שגיאה אמיתית. (רטרו רב-תקופתי מחוץ לשרשרת)`;
+    sub.value=`${_bulkData.perFile.length} קבצים · הופק ${new Date().toLocaleDateString('he-IL')} · מנטרל: משרה חלקית ← ותק סטודנט ← בסיס ← גמול השתלמות ← דריכות בי"ח ← גמול מנהל ← השלמת מינימום ← הפרשי רטרו. הנותר = שגיאה אמיתית. (רטרו רב-תקופתי מחוץ לשרשרת)`;
     sub.font={size:10,color:{argb:XL.MUTED}};
     // Totals: sum the full-time neutralization fields across files.
     const tot={workers:0,part_time:0,ft:0,ft_valid:0,inv_student:0,inv_base:0,inv_gmul:0,
-               inv_brich:0,inv_mnhal:0,inv_real:0,no_base:0,multi:0};
+               inv_brich:0,inv_mnhal:0,inv_minimum:0,inv_retro:0,inv_real:0,no_base:0,multi:0};
     for(const s of _bulkData.perFile) for(const k in tot) tot[k]+=(s[k]||0);
-    const ftAct=tot.ft_valid+tot.inv_student+tot.inv_base+tot.inv_gmul+tot.inv_brich+tot.inv_mnhal+tot.inv_real;
+    const ftAct=tot.ft_valid+tot.inv_student+tot.inv_base+tot.inv_gmul+tot.inv_brich+tot.inv_mnhal+tot.inv_minimum+tot.inv_retro+tot.inv_real;
     const realPct=ftAct?tot.inv_real/ftAct:0;
     const kpis=[['סה"כ עובדים',tot.workers,null,INT_FMT],['משרה מלאה',tot.ft,null,INT_FMT],
       ['תקין (מלאה)',tot.ft_valid,XL.GOODT,INT_FMT],
@@ -1648,27 +1654,27 @@ async function downloadUnified(){
     ws.getRow(4).height=16; ws.getRow(5).height=24;
     ws.addRow([]);
     styleHeaderRow(ws,['חודש שכר','קובץ','עובדים','משרה חלקית','משרה מלאה','תקין (מלאה)',
-      'שגויי ותק סטודנט','שגויי בסיס','שגויי גמול','שגויי דריכות','שגויי גמול מנהל','שגויים אמיתיים','ללא בסיס','רטרו רב-תקופתי','% שגויים אמיתיים'],
-      [11,18,10,10,10,11,11,10,10,10,11,12,9,11,13]);
+      'שגויי ותק סטודנט','שגויי בסיס','שגויי גמול','שגויי דריכות','שגויי גמול מנהל','שגויי השלמת מינימום','הפרשי רטרו ברכיבים','שגויים אמיתיים','ללא בסיס','רטרו רב-תקופתי','% שגויים אמיתיים'],
+      [11,18,10,10,10,11,11,10,10,10,11,12,12,12,9,11,13]);
     const headR=ws.lastRow.number;
     for(const s of _bulkData.perFile){
-      const fa=s.ft_valid+(s.inv_student||0)+s.inv_base+s.inv_gmul+s.inv_brich+s.inv_mnhal+s.inv_real;
+      const fa=s.ft_valid+(s.inv_student||0)+s.inv_base+s.inv_gmul+s.inv_brich+s.inv_mnhal+(s.inv_minimum||0)+(s.inv_retro||0)+s.inv_real;
       const rp=fa?s.inv_real/fa:0;
       const r=ws.addRow([s.month,s.name,s.workers,s.part_time,s.ft,s.ft_valid,
-        s.inv_student||0,s.inv_base,s.inv_gmul,s.inv_brich,s.inv_mnhal,s.inv_real,s.no_base,s.multi,rp]);
-      for(let ci=3;ci<=14;ci++) r.getCell(ci).numFmt=INT_FMT;
+        s.inv_student||0,s.inv_base,s.inv_gmul,s.inv_brich,s.inv_mnhal,s.inv_minimum||0,s.inv_retro||0,s.inv_real,s.no_base,s.multi,rp]);
+      for(let ci=3;ci<=16;ci++) r.getCell(ci).numFmt=INT_FMT;
       r.getCell(6).font={color:{argb:XL.GOODT}};
-      [7,8,9,10,11].forEach(ci=>{ if(r.getCell(ci).value) r.getCell(ci).font={color:{argb:XL.WARNT}}; });
-      if(s.inv_real) r.getCell(12).font={bold:true,color:{argb:XL.BADT}};
-      r.getCell(15).numFmt='0.00%';
+      [7,8,9,10,11,12,13].forEach(ci=>{ if(r.getCell(ci).value) r.getCell(ci).font={color:{argb:XL.WARNT}}; });
+      if(s.inv_real) r.getCell(14).font={bold:true,color:{argb:XL.BADT}};
+      r.getCell(17).numFmt='0.00%';
     }
     const lastR=ws.lastRow.number;
     const trow=ws.addRow(['סה"כ','',tot.workers,tot.part_time,tot.ft,tot.ft_valid,
-      tot.inv_student,tot.inv_base,tot.inv_gmul,tot.inv_brich,tot.inv_mnhal,tot.inv_real,tot.no_base,tot.multi,realPct]);
-    trow.font={bold:true}; for(let ci=3;ci<=14;ci++) trow.getCell(ci).numFmt=INT_FMT;
-    trow.getCell(12).font={bold:true,color:{argb:XL.BADT}}; trow.getCell(15).numFmt='0.00%';
+      tot.inv_student,tot.inv_base,tot.inv_gmul,tot.inv_brich,tot.inv_mnhal,tot.inv_minimum,tot.inv_retro,tot.inv_real,tot.no_base,tot.multi,realPct]);
+    trow.font={bold:true}; for(let ci=3;ci<=16;ci++) trow.getCell(ci).numFmt=INT_FMT;
+    trow.getCell(14).font={bold:true,color:{argb:XL.BADT}}; trow.getCell(17).numFmt='0.00%';
     // % real errors — LOW is good.
-    ws.addConditionalFormatting({ref:`O${headR+1}:O${lastR}`,rules:[
+    ws.addConditionalFormatting({ref:`Q${headR+1}:Q${lastR}`,rules:[
       {type:'cellIs',operator:'lessThanOrEqual',formulae:['0.01'],priority:1,
        style:{font:{color:{argb:XL.GOODT}},fill:fill(XL.GOODB)}},
       {type:'cellIs',operator:'greaterThan',formulae:['0.05'],priority:2,
@@ -1677,13 +1683,21 @@ async function downloadUnified(){
        style:{font:{color:{argb:XL.WARNT}},fill:fill(XL.WARNB)}}]});
     ws.addConditionalFormatting({ref:`C${headR+1}:C${lastR}`,rules:[
       {type:'dataBar',minLength:0,maxLength:100,priority:4,cfvo:[{type:'num',value:0},{type:'max'}],color:{argb:XL.BAR}}]});
-    ws.addConditionalFormatting({ref:`L${headR+1}:L${lastR}`,rules:[
+    ws.addConditionalFormatting({ref:`N${headR+1}:N${lastR}`,rules:[
       {type:'dataBar',minLength:0,maxLength:100,priority:5,cfvo:[{type:'num',value:0},{type:'max'}],color:{argb:XL.REDBAR}}]});
 
     // ---- שגויים לבדיקה: full-time workers whose error is real -------------------
     const inv=_bulkData.perEmp.filter(r=>r[STATUS_RAW_IDX]==='invalid'&&r[FT_IDX]&&r[ERRCAT_IDX]==='real')
       .slice().sort((a,b)=>rowAnomaly(b)-rowAnomaly(a));
     empSheet(wb,'שגויים לבדיקה',inv);
+    // ---- הפרשי רטרו ברכיבים: slips the monthly formula can't represent ---------
+    const retroRows=_bulkData.perEmp.filter(r=>r[STATUS_RAW_IDX]==='invalid'&&r[FT_IDX]&&r[ERRCAT_IDX]==='retro')
+      .slice().sort((a,b)=>rowAnomaly(b)-rowAnomaly(a));
+    if(retroRows.length) empSheet(wb,'הפרשי רטרו ברכיבים',retroRows);
+    // ---- שגויי השלמת מינימום: population-model gaps (add-on beyond the Progim) --
+    const minRows=_bulkData.perEmp.filter(r=>r[STATUS_RAW_IDX]==='invalid'&&r[FT_IDX]&&r[ERRCAT_IDX]==='minimum')
+      .slice().sort((a,b)=>rowAnomaly(b)-rowAnomaly(a));
+    if(minRows.length) empSheet(wb,'שגויי השלמת מינימום',minRows);
     // ---- שינויי סטטוס בין חודשים ------------------------------------------------
     const flips=computeFlips(_bulkData.perEmp);
     if(flips.length){

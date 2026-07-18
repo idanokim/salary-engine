@@ -249,6 +249,11 @@ def check_worker_components(components, job_pct, rules, ministry_code=0,
         if rtype == "percent":
             base = sum(amounts.get(c, 0.0) for c in rule["base_codes"])
             base += rule.get("base_const", 0.0) * jp
+            # Weighted negative terms per the SACHAR formulas, e.g. 5401/5533
+            # subtract 4935 (תוספת אמון) at the 4934+4994 combined rate:
+            # −CY11×(CV7+CW7).
+            for mc, mf in (rule.get("base_minus") or {}).items():
+                base -= amounts.get(int(mc), 0.0) * mf
             if base <= 0:
                 continue
             # Grade-tiered tosefet (מנמ"ש 2010): restrict to the grade's own
@@ -263,20 +268,26 @@ def check_worker_components(components, job_pct, rules, ministry_code=0,
             best = min(rates, key=lambda r: abs(base * r - slip))
             expected = round(base * best, 2)
         elif rtype == "max22":
-            # 4550 (הסכם 2001 אישי), per the Progim '4550' sheet: the higher of
-            # 22% × (שכר משולב + הסכם 99) minus the listed deductions, and the
-            # ministry floor (714.7 default; per-ministry overrides) × job%.
+            # 4550 (הסכם 2001 אישי), per the Progim '4550' sheet formula D11:
+            # MAX(22% × (משולב + הסכם 99) − הפחתות, 0, רצפת המשרד − הפחתות) —
+            # the deductions come off the floor branch too.
             base = sum(amounts.get(c, 0.0) for c in rule["base_codes"])
             if base <= 0:
                 continue
             ded = sum(amounts.get(c, 0.0) for c in rule["deductions"])
             floor = rule["floors"].get(str(ministry_code or 0),
                                        rule["floor_default"]) * jp
-            expected = round(max(rule["pct"] * base - ded, floor), 2)
+            expected = round(max(rule["pct"] * base - ded, 0.0, floor - ded), 2)
         else:
             # shekel: the component is one of a fixed set of flat amounts, scaled
             # by job%. Expected = the closest admissible amount × job% (e.g.
             # גמול מינהל 4983 ∈ {105, 210, 315}). Wrong amounts still fail all.
+            # Month-dependent sets (5402/5524 — the amount tracks the worker's
+            # retirement month, which the גולמי file does not carry) are handled
+            # by the per-file population check instead (check_shekel_population);
+            # the strict table check runs only in pure (literal-Progim) mode.
+            if rule.get("month_dependent") and not pure:
+                continue
             best = min(rule["amounts"], key=lambda a: abs(a * jp - slip))
             expected = round(best * jp, 2)
         ok = abs(expected - slip) <= MATCH_THRESHOLD
@@ -373,6 +384,59 @@ def check_gmul_population(entries) -> dict:
 # is a residual of a ~₪6,000 target minus a sum of many 2-decimal-rounded
 # components, so ±₪1 would flag pure rounding accumulation.
 MIN_TOLERANCE = 8.0
+
+
+# תוספות שקליות תלויות-חודש (5402/5524) — the admissible amount depends on the
+# worker's retirement month (heskem 2016 cols D/N; heskem 2023 pulses), which
+# the גולמי file does not carry. So the standard is taken from the file's OWN
+# population: the agreement-table amounts PLUS every value shared by ≥3 workers
+# (a cluster is a legitimate group standard — e.g. an indexed or droog-specific
+# amount — never 3+ identical individual errors). Only isolated deviants are
+# flagged, and only when the file carries enough holders to calibrate.
+SHEKEL_POP_MIN_CLUSTER = 3
+SHEKEL_POP_NOTE = ("סכום שאינו בטבלת ההסכם ואינו ערך קבוצתי בקובץ — "
+                   "חשד להפרשי רטרו/סכום חריג")
+
+
+def check_shekel_population(entries, rules) -> dict:
+    """Self-calibrated month-dependent shekel checks. {entry_index: {code: flag}}."""
+    out = {}
+    for key, rule in rules.items():
+        if rule.get("type") != "shekel" or not rule.get("month_dependent"):
+            continue
+        codes = [int(c) for c in rule["codes"]]
+        table = [float(a) for a in rule.get("amounts", [])]
+        per, clusters = {}, Counter()
+        for i, e in enumerate(entries):
+            r = e["result"]
+            if r.status not in (STATUS_VALID, STATUS_INVALID):
+                continue
+            amt = defaultdict(float)
+            for c in r.components:
+                amt[c.code] += (c.expected or 0.0)
+            v = sum(amt.get(c, 0.0) for c in codes)
+            if abs(v) < 0.01:
+                continue
+            job = r.job_pct or 1.0
+            norm = round(v / job, 1)
+            per[i] = (v, norm, job)
+            clusters[norm] += 1
+        if len(per) < TRUST_MIN_N:
+            continue
+        admissible = {n for n, cnt in clusters.items()
+                      if cnt >= SHEKEL_POP_MIN_CLUSTER}
+        for i, (v, norm, job) in per.items():
+            if norm in admissible:
+                continue
+            if any(abs(v - a * job) <= MATCH_THRESHOLD for a in table):
+                continue
+            best = min(table, key=lambda a: abs(a * job - v)) if table else 0.0
+            exp = round(best * job, 2)
+            out.setdefault(i, {})[int(key)] = {
+                "slip": round(v, 2), "expected": exp,
+                "diff": round(exp - v, 2), "ok": False,
+                "name": rule["name"], "note": SHEKEL_POP_NOTE}
+    return out
 
 
 def check_minimum_population(entries, rules) -> dict:
@@ -743,6 +807,42 @@ def resolve_plus_grades(workers_raw: dict, lookups: dict) -> dict:
     return remap
 
 
+# --- הפרשי רטרו ברכיבים -------------------------------------------------------
+# A slip the monthly Progim formula cannot represent (mirror of
+# retroSuspectReason in engine.js; keep in sync): (a) הפרש / injury-pay
+# (ד. פגיעה בעבודה) rows on the slip, (b) a rule-covered component reversed to
+# a negative total, or (c) every flagged component carrying ≥2 months' worth of
+# its expected value. These are payment-timing artifacts, not simulator gaps —
+# the dashboard funnel separates them from real errors.
+RETRO_ROW_RE = re.compile(r"הפרש|פגיעה בעבודה|ד\.\s*פג")
+
+
+def rule_covered_codes(rules) -> set:
+    covered = {647, 667, 897, 4268, 4269}
+    for rule in (rules or {}).values():
+        if rule.get("type") in ("percent", "shekel", "max22", "minimum"):
+            covered.update(int(c) for c in rule["codes"])
+    return covered
+
+
+def retro_suspect_reason(components, comp_flags, covered):
+    """components: (code, name, amount, pensionable) slip rows."""
+    amt = defaultdict(float)
+    for code, name, amount, _pens in components:
+        if code is not None:
+            amt[int(code)] += (amount or 0.0)
+        if name and RETRO_ROW_RE.search(str(name)) and abs(amount or 0.0) > 1:
+            return "רכיבי הפרשים/פגיעה בעבודה בתלוש — חודש תיקוני שכר"
+    for code, v in amt.items():
+        if code in covered and v < -0.01:
+            return "רכיב הסכם בסכום שלילי — היפוך/קיזוז רטרואקטיבי"
+    if comp_flags and all((chk.get("expected") or 0) > 1
+                          and (chk.get("slip") or 0) >= 2 * chk["expected"] - MATCH_THRESHOLD
+                          for chk in comp_flags.values()):
+        return "רכיבים בכפולות מהערך החודשי — חשד להצטברות רטרו"
+    return None
+
+
 def run_engine_full(workers_raw: dict, lookups: dict, pure: bool = False) -> list:
     """Run the full engine over grouped גולמי rows: base validation per worker,
     then חוקה component checks with per-file self-calibration.
@@ -787,23 +887,31 @@ def run_engine_full(workers_raw: dict, lookups: dict, pure: bool = False) -> lis
                   if result.status in (STATUS_VALID, STATUS_INVALID) else {})
         # Base-only verdict, captured before pass B folds component flags in.
         entries.append({"result": result, "comp_checks": checks,
-                        "base_ok": result.status == STATUS_VALID})
+                        "base_ok": result.status == STATUS_VALID,
+                        "raw_components": components})
     # Pass B — attach flags. In pure mode every rule is trusted as written and
     # the gmul/minimum population reconstructions are skipped (they are add-ons,
     # not part of the literal Progim); otherwise self-calibrate rule trust.
     if pure:
         trusted = set(e_code for e in entries for e_code in e["comp_checks"])
-        gmul_flags, min_flags = {}, {}
+        gmul_flags, min_flags, shekel_flags = {}, {}, {}
     else:
         trusted = trusted_rule_codes([e["comp_checks"] for e in entries], rules)
         gmul_flags = check_gmul_population(entries)
         min_flags = check_minimum_population(entries, rules)
+        shekel_flags = check_shekel_population(entries, rules)
+    covered = rule_covered_codes(rules)
     for i, e in enumerate(entries):
         flags = {code: chk for code, chk in e["comp_checks"].items()
                  if code in trusted and not chk["ok"]}
         flags.update(gmul_flags.get(i, {}))
         flags.update(min_flags.get(i, {}))
+        flags.update(shekel_flags.get(i, {}))
         e["comp_flags"] = flags
+        # הפרשי רטרו ברכיבים — payment-timing artifacts the monthly formula
+        # cannot represent; the dashboard separates them from real errors.
+        e["retro_suspect"] = retro_suspect_reason(
+            e.pop("raw_components"), flags, covered)
         result = e["result"]
         if flags:
             # A proven-wrong component makes the slip invalid even if its base
