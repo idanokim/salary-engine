@@ -1,0 +1,12 @@
+{
+  "functions": {
+    "api/index.py": {
+      "includeFiles": "*.{xlsx,html,json,js}",
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api/index.py" }
+  ]
+}

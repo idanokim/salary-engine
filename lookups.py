@@ -95,6 +95,20 @@ def get_grade_base(lookups: dict, kod_darga: int) -> float | None:
     return lookups["grade"].get(int(kod_darga))
 
 
+# Seniority (ותק) multiplier cap for grade type מנהלי — see main.py for the
+# rationale. The Progim 19.05.2026 engine caps the מנהלי multiplier at this
+# value for seniority >= 37.25 years.
+VATEK_CAP_YEARS = 37.25
+VATEK_CAP_MULT = 1.445076
+
+
 def get_vatek_multiplier(lookups: dict, vatek: float) -> float | None:
-    """Return seniority multiplier for a given vatek (years). Exact match only."""
-    return lookups["vatek"].get(float(vatek))
+    """Return seniority multiplier for a given vatek (years).
+
+    Exact table match below the cap; for vatek >= 37.25 the מנהלי multiplier is
+    clamped to 1.445076 (also covers vatek beyond the table's max key).
+    """
+    vatek = float(vatek)
+    if vatek >= VATEK_CAP_YEARS:
+        return VATEK_CAP_MULT
+    return lookups["vatek"].get(vatek)

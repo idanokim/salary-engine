@@ -3,733 +3,2014 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>מנוע שכר — מנהלי</title>
+<title>סימולטור שכר — מנהלת הגמלאות</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231E3A5F'/%3E%3Cpath d='M9 16.5l4.5 4.5L23 11' fill='none' stroke='%23fff' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Heebo:wght@300;400;500;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+/* ---- Design tokens (ui-ux-pro-max: "Accessible & Ethical", light, WCAG AAA) ---- */
 :root{
-  --bg:#0c0c0c;
-  --s1:#141414;
-  --s2:#1e1e1e;
-  --s3:#272727;
-  --border:#2e2e2e;
-  --border2:#3a3a3a;
-  --text:#efefef;
-  --muted:#777;
-  --muted2:#555;
-  --accent:#c8f135;
-  --accent-t:rgba(200,241,53,.1);
-  --accent-t2:rgba(200,241,53,.05);
-  --green:#4ade80;
-  --green-t:rgba(74,222,128,.1);
-  --red:#f87171;
-  --red-t:rgba(248,113,113,.1);
-  --amber:#fbbf24;
-  --amber-t:rgba(251,191,36,.1);
-  --mono:'IBM Plex Mono',monospace;
-  --sans:'Heebo',sans-serif;
-  --r:8px;
-  --r2:14px;
+  --primary:#1E3A5F;      /* navy — trust / gov */
+  --primary-600:#16304f;
+  --secondary:#2563EB;    /* action blue */
+  --accent:#059669;       /* valid / paid green */
+  --bg:#F4F7FB;
+  --surface:#FFFFFF;
+  --surface-2:#F8FAFC;
+  --fg:#0F172A;
+  --muted:#64748B;
+  --muted-2:#94A3B8;
+  --border:#E2E8F0;
+  --border-2:#CBD5E1;
+  --green:#059669;  --green-bg:#ECFDF5;
+  --amber:#B45309;  --amber-bg:#FFFBEB;
+  --red:#DC2626;    --red-bg:#FEF2F2;
+  --blue-bg:#EFF6FF;
+  --ring:rgba(37,99,235,.35);
+  --sans:'Assistant',system-ui,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --shadow-sm:0 1px 2px rgba(15,23,42,.06);
+  --shadow:0 1px 3px rgba(15,23,42,.08),0 1px 2px rgba(15,23,42,.04);
+  --shadow-lg:0 10px 30px -10px rgba(15,23,42,.15);
+  --r:12px; --r-sm:8px;
 }
-body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:15px;line-height:1.6;min-height:100vh}
-
-/* HEADER */
-header{
-  height:56px;display:flex;align-items:center;justify-content:space-between;
-  padding:0 1.5rem;border-bottom:1px solid var(--border);
-  background:var(--bg);position:sticky;top:0;z-index:50;
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-size:16px}
+body{
+  font-family:var(--sans);background:var(--bg);color:var(--fg);
+  line-height:1.6;-webkit-font-smoothing:antialiased;min-height:100vh;
 }
-.logo{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:500;letter-spacing:.06em;text-transform:uppercase}
-.dot{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:blink 2s ease-in-out infinite}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
-.status{font-family:var(--mono);font-size:11px;padding:3px 10px;border-radius:20px;
-  background:var(--s2);color:var(--muted);border:1px solid var(--border);transition:all .3s}
-.status.ok{background:var(--green-t);color:var(--green);border-color:rgba(74,222,128,.2)}
-.status.err{background:var(--red-t);color:var(--red);border-color:rgba(248,113,113,.2)}
+.num{font-family:var(--mono);font-feature-settings:"tnum" 1;font-variant-numeric:tabular-nums}
+a{color:var(--secondary)}
+:focus-visible{outline:3px solid var(--ring);outline-offset:2px;border-radius:4px}
 
-/* LAYOUT */
-.layout{display:grid;grid-template-columns:420px 1fr;min-height:calc(100vh - 56px)}
-@media(max-width:900px){.layout{grid-template-columns:1fr}}
+/* ---- Layout ---- */
+.wrap{max-width:1120px;margin:0 auto;padding:0 20px}
 
-/* LEFT PANEL */
-.left-panel{border-left:1px solid var(--border);background:var(--s1);overflow-y:auto;height:calc(100vh - 56px);position:sticky;top:56px}
+header.site{
+  background:linear-gradient(180deg,var(--primary),var(--primary-600));
+  color:#fff;padding:22px 0;box-shadow:var(--shadow);
+}
+header.site .wrap{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.logo{
+  width:44px;height:44px;border-radius:10px;background:rgba(255,255,255,.12);
+  display:grid;place-items:center;flex:none;
+}
+.logo svg{width:26px;height:26px;stroke:#fff}
+.brand h1{font-size:20px;font-weight:700;letter-spacing:-.01em;line-height:1.2}
+.brand p{font-size:13.5px;color:#cbd5e1;font-weight:400}
+.spacer{flex:1}
+.status{
+  display:inline-flex;align-items:center;gap:8px;font-size:13.5px;font-weight:500;
+  background:rgba(255,255,255,.12);padding:8px 14px;border-radius:999px;color:#e2e8f0;
+}
+.status .dot{width:8px;height:8px;border-radius:50%;background:var(--muted-2)}
+.status.ok .dot{background:#34d399;box-shadow:0 0 0 3px rgba(52,211,153,.25)}
+.status.err{background:rgba(220,38,38,.2);color:#fecaca}
+.status.err .dot{background:#f87171}
 
-/* NAV TABS */
-.nav{display:flex;border-bottom:1px solid var(--border)}
-.nav-tab{flex:1;padding:14px 8px;background:transparent;border:none;border-bottom:2px solid transparent;
-  color:var(--muted);font-family:var(--sans);font-size:13px;font-weight:500;cursor:pointer;
-  transition:all .15s;letter-spacing:.02em;margin-bottom:-1px}
-.nav-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
-.nav-tab:hover:not(.active){color:var(--text)}
+/* ---- Tabs ---- */
+nav.tabs{background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:20;box-shadow:var(--shadow-sm)}
+/* The tab row must scroll INSIDE itself when it outgrows a phone screen —
+   otherwise it widens the whole document, the page pans sideways, and taps on
+   the forms land offset (the עובד-בודד tab became unusable on mobile). */
+nav.tabs .wrap{display:flex;gap:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+nav.tabs .wrap::-webkit-scrollbar{display:none}
+.tab{
+  appearance:none;border:none;background:none;font-family:inherit;cursor:pointer;
+  font-size:15px;font-weight:500;color:var(--muted);padding:16px 18px;
+  border-bottom:2.5px solid transparent;transition:color .15s,border-color .15s;
+  display:inline-flex;align-items:center;gap:8px;white-space:nowrap;flex:0 0 auto;
+}
+.tab:hover{color:var(--fg)}
+.tab svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8}
+.tab.active{color:var(--primary);border-bottom-color:var(--secondary);font-weight:600}
+@media(max-width:620px){.tab{padding:14px 12px;font-size:14px}}
+html,body{overflow-x:hidden}
 
-.tab-pane{display:none;padding:1.5rem}
-.tab-pane.active{display:block}
+main{padding:28px 0 64px}
+.grid{display:grid;grid-template-columns:minmax(340px,420px) 1fr;gap:24px;align-items:start}
+@media(max-width:880px){.grid{grid-template-columns:1fr}}
+.pane{display:none}
+.pane.active{display:block;animation:fade .25s ease-out}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
-/* FORM */
-.section{margin-bottom:1.5rem}
-.section-title{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;
-  color:var(--muted2);margin-bottom:.875rem;display:flex;align-items:center;gap:8px}
-.section-title::after{content:'';flex:1;height:1px;background:var(--border)}
+/* ---- Cards ---- */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
+.card-head{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px}
+.card-head h2{font-size:15px;font-weight:600;color:var(--fg)}
+.card-head .hint{font-size:13px;color:var(--muted)}
+.card-body{padding:20px}
 
-.field{margin-bottom:.875rem}
-label{display:block;font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:5px}
+/* ---- Form ---- */
+.section-label{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:18px 0 10px}
+.section-label:first-child{margin-top:0}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:13.5px;font-weight:500;color:var(--fg);margin-bottom:6px}
+.field .req{color:var(--red)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 input,select{
-  width:100%;background:var(--s2);border:1px solid var(--border2);border-radius:var(--r);
-  color:var(--text);font-family:var(--mono);font-size:13px;padding:9px 11px;
-  outline:none;transition:border-color .15s;direction:ltr;
+  width:100%;font-family:var(--sans);font-size:14.5px;color:var(--fg);background:var(--surface);
+  border:1px solid var(--border-2);border-radius:var(--r-sm);padding:10px 12px;transition:border-color .15s,box-shadow .15s;
 }
-input:focus,select:focus{border-color:var(--accent)}
-select{cursor:pointer}
-select option{background:#1e1e1e}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
-.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem}
+input[type=number]{font-family:var(--mono)}
+input:hover,select:hover{border-color:var(--muted-2)}
+input:focus,select:focus{outline:none;border-color:var(--secondary);box-shadow:0 0 0 3px var(--ring)}
+.helper{font-size:12px;color:var(--muted);margin-top:4px}
 
-/* COMPONENTS */
-.comp-header{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:6px;margin-bottom:4px}
-.comp-header span{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted2)}
-.comp-row{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:6px;margin-bottom:6px;align-items:center}
-.comp-row input{font-size:12px;padding:7px 9px}
-.rm-btn{width:30px;height:30px;background:transparent;border:1px solid var(--border2);
-  border-radius:6px;color:var(--muted);cursor:pointer;font-size:15px;
-  display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
-.rm-btn:hover{border-color:var(--red);color:var(--red);background:var(--red-t)}
-.add-btn{width:100%;padding:8px;background:transparent;border:1px dashed var(--border2);
-  border-radius:var(--r);color:var(--muted);font-size:12px;cursor:pointer;
-  transition:all .15s;margin-top:2px}
-.add-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-t2)}
+/* ---- worker lookup from a month sheet ---- */
+.wl-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+@media(max-width:720px){.wl-grid{grid-template-columns:1fr}}
+.wl-upload{margin:0;min-height:150px}
+.wl-pick{display:flex;flex-direction:column;gap:12px;justify-content:center}
+.wl-meta{font-size:12.5px;color:var(--muted)}
+.wl-worker{display:flex;flex-wrap:wrap;gap:8px 16px;padding:12px 14px;background:var(--surface-2);
+  border:1px solid var(--border);border-radius:var(--r-sm);margin-bottom:14px}
+.wl-worker .wi{display:flex;flex-direction:column;gap:2px}
+.wl-worker .wi b{font-size:14px;color:var(--fg)}
+.wl-worker .wi span{font-size:11px;color:var(--muted)}
+.finding{display:flex;gap:8px;align-items:flex-start;font-size:13px;padding:8px 12px;border-radius:var(--r-sm);
+  background:var(--red-bg,#fef2f2);border:1px solid #fecaca;margin-bottom:6px}
+.finding.warn{background:#fffbeb;border-color:#fde68a}
+.finding .fc{font-weight:600;white-space:nowrap}
+.finding-h{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:16px 0 8px}
+/* ---- accuracy hero ring ---- */
+.acc-hero{display:flex;gap:24px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.ring-wrap{position:relative;width:144px;height:144px;flex:0 0 auto}
+.acc-ring{width:144px;height:144px;transform:rotate(-90deg)}
+.ring-bg{fill:none;stroke:var(--surface-2);stroke-width:12}
+.ring-fg{fill:none;stroke:var(--green);stroke-width:12;stroke-linecap:round;
+  stroke-dasharray:326.7;stroke-dashoffset:326.7;transition:stroke-dashoffset .9s cubic-bezier(.4,0,.2,1),stroke .3s}
+.ring-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.rc-pct{font-size:30px;font-weight:800;color:var(--fg);font-family:var(--mono);line-height:1}
+.rc-lbl{font-size:12px;color:var(--muted);margin-top:3px}
+.acc-legend{flex:1;min-width:230px;display:grid;grid-template-columns:1fr 1fr;gap:9px 16px}
+.leg{display:flex;align-items:center;gap:9px;font-size:13.5px;color:var(--fg)}
+.leg .dot{width:11px;height:11px;border-radius:3px;flex:0 0 auto}
+.leg b{margin-inline-start:auto;font-family:var(--mono);font-weight:700}
+.leg small{color:var(--muted);font-size:11.5px}
+.comp-row{display:grid;grid-template-columns:1fr 84px 110px 38px;gap:8px;margin-bottom:8px;align-items:center}
+.comp-row input{padding:8px 10px;font-size:13.5px}
+.rm-btn{appearance:none;border:1px solid var(--border-2);background:var(--surface);color:var(--muted);
+  width:38px;height:38px;border-radius:var(--r-sm);font-size:18px;cursor:pointer;transition:.15s}
+.rm-btn:hover{border-color:var(--red);color:var(--red);background:var(--red-bg)}
+.add-comp{appearance:none;border:1.5px dashed var(--border-2);background:none;color:var(--secondary);
+  font-family:inherit;font-size:13.5px;font-weight:500;padding:9px;width:100%;border-radius:var(--r-sm);cursor:pointer;transition:.15s}
+.add-comp:hover{border-color:var(--secondary);background:var(--blue-bg)}
 
-/* SUBMIT */
-.submit-btn{
-  width:100%;padding:13px;background:var(--accent);color:#0c0c0c;
-  border:none;border-radius:var(--r);font-family:var(--sans);font-size:14px;
-  font-weight:700;cursor:pointer;transition:opacity .15s,transform .1s;margin-top:.5rem
+.btn{
+  appearance:none;border:none;font-family:inherit;font-size:15px;font-weight:600;cursor:pointer;
+  background:var(--secondary);color:#fff;padding:13px;width:100%;border-radius:var(--r-sm);
+  margin-top:18px;transition:background .15s,transform .05s;display:inline-flex;align-items:center;justify-content:center;gap:8px;
 }
-.submit-btn:hover{opacity:.88}
-.submit-btn:active{transform:scale(.98)}
-.submit-btn:disabled{opacity:.35;cursor:not-allowed;transform:none}
+.btn:hover{background:#1d4ed8}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{background:var(--muted-2);cursor:not-allowed}
 
-/* UPLOAD */
-.upload-zone{
-  border:1px dashed var(--border2);border-radius:var(--r2);padding:2.5rem 1.5rem;
-  text-align:center;cursor:pointer;transition:all .15s;position:relative;
+/* ---- Progress / errors ---- */
+.progress{height:3px;background:var(--muted-bg);border-radius:2px;overflow:hidden;opacity:0;transition:opacity .2s;margin-top:12px}
+.progress.visible{opacity:1}
+.progress .fill{height:100%;background:var(--secondary);width:0;transition:width .3s ease}
+.alert{display:none;background:var(--red-bg);border:1px solid #fecaca;color:#b91c1c;font-size:13.5px;
+  padding:11px 13px;border-radius:var(--r-sm);margin-top:12px}
+.alert.visible{display:block}
+
+/* ---- Results ---- */
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
+  padding:72px 24px;color:var(--muted)}
+.empty svg{width:52px;height:52px;stroke:var(--muted-2);fill:none;stroke-width:1.4;margin-bottom:16px}
+.empty h3{font-size:16px;font-weight:600;color:var(--fg);margin-bottom:6px}
+.empty p{font-size:14px;max-width:340px}
+
+.verdict{display:flex;align-items:center;gap:14px;padding:18px 20px;border-radius:var(--r);margin-bottom:18px}
+.verdict.valid{background:var(--green-bg);border:1px solid #a7f3d0}
+.verdict.invalid{background:var(--red-bg);border:1px solid #fecaca}
+.verdict.info{background:var(--amber-bg);border:1px solid #fde68a}
+.verdict .vicon{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;flex:none}
+.verdict.valid .vicon{background:var(--green)}
+.verdict.invalid .vicon{background:var(--red)}
+.verdict.info .vicon{background:var(--amber)}
+.verdict .vicon svg{width:24px;height:24px;stroke:#fff;fill:none;stroke-width:2.4}
+.verdict .vt{font-size:17px;font-weight:700}
+.verdict.valid .vt{color:#065f46}
+.verdict.invalid .vt{color:#991b1b}
+.verdict.info .vt{color:#92400e}
+.verdict .vs{font-size:13.5px;color:var(--muted)}
+
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:18px}
+@media(max-width:620px){.stats{grid-template-columns:repeat(2,1fr)}}
+.stat{background:var(--surface);padding:14px 16px}
+.stat .k{font-size:12px;color:var(--muted);font-weight:500;margin-bottom:4px}
+.stat .v{font-size:19px;font-weight:700;color:var(--fg)}
+.stat .v.sm{font-size:15px}
+
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+thead th{text-align:right;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.03em;padding:10px 12px;border-bottom:1px solid var(--border);background:var(--surface-2)}
+tbody td{padding:11px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover{background:var(--surface-2)}
+.amount{font-family:var(--mono);font-weight:600;text-align:left;font-variant-numeric:tabular-nums}
+.code-sub{font-family:var(--mono);font-size:11.5px;color:var(--muted-2)}
+.total-row td{font-weight:700;background:var(--surface-2);border-top:2px solid var(--border-2)}
+.total-row .amount{color:var(--primary);font-size:15px}
+
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;padding:3px 8px;border-radius:999px}
+.b-calc{background:var(--blue-bg);color:#1d4ed8}
+.b-raw{background:var(--muted-bg);color:var(--muted)}
+.b-pension{background:#f5f3ff;color:#6d28d9}
+.c-green{color:var(--green);font-family:var(--mono);font-weight:600}
+.c-amber{color:var(--amber);font-family:var(--mono);font-weight:600}
+.c-red{color:var(--red);font-family:var(--mono);font-weight:600}
+.c-muted{color:var(--muted-2)}
+
+/* ---- Upload ---- */
+.upload{border:2px dashed var(--border-2);border-radius:var(--r);background:var(--surface-2);
+  padding:40px 24px;text-align:center;cursor:pointer;transition:.18s}
+.upload:hover,.upload.hover{border-color:var(--secondary);background:var(--blue-bg)}
+.upload svg{width:40px;height:40px;stroke:var(--secondary);fill:none;stroke-width:1.5;margin-bottom:12px}
+.upload h3{font-size:15.5px;font-weight:600;margin-bottom:4px}
+.upload p{font-size:13.5px;color:var(--muted)}
+.upload input{display:none}
+.filename{display:none;font-size:13.5px;font-weight:500;margin-top:12px;color:var(--fg);text-align:center}
+
+.bar-wrap{height:10px;background:var(--muted-bg);border-radius:999px;overflow:hidden;margin:8px 0 4px}
+.bar-fill{height:100%;border-radius:999px;width:0;transition:width .5s ease}
+.match-cell{width:120px}
+.match-bg{height:7px;background:var(--muted-bg);border-radius:999px;overflow:hidden}
+.match-fill{height:100%;border-radius:999px}
+footer{text-align:center;color:var(--muted);font-size:12.5px;padding:24px;border-top:1px solid var(--border)}
+
+/* ---- Logic / how-it-works ---- */
+.logic{max-width:760px;margin:0 auto}
+.logic .lead{font-size:15.5px;color:var(--fg);margin-bottom:18px}
+.formula{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);padding:18px 20px;margin-bottom:22px}
+.formula-line{font-size:16px;font-weight:600;color:var(--primary)}
+.formula-line sub{font-size:11px;color:var(--muted);font-weight:500}
+.formula .op{color:var(--secondary);margin:0 6px;font-weight:700}
+.formula-split{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px dashed var(--border-2);font-size:13.5px;color:var(--muted)}
+.steps{display:grid;gap:12px;margin-bottom:8px}
+.step{display:flex;gap:14px;align-items:flex-start;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px}
+.step-n{flex:none;width:30px;height:30px;border-radius:50%;background:var(--primary);color:#fff;display:grid;place-items:center;font-weight:700;font-size:14px}
+.step h4{font-size:14.5px;font-weight:600;margin-bottom:2px}
+.step p{font-size:13.5px;color:var(--muted)}
+.logic-h{font-size:15px;font-weight:700;color:var(--fg);margin:26px 0 12px}
+.status-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+@media(max-width:620px){.status-grid{grid-template-columns:1fr}}
+.st-card{border:1px solid var(--border);border-radius:var(--r);padding:13px 15px;position:relative;padding-right:30px}
+.st-card .st-dot{position:absolute;right:14px;top:17px;width:10px;height:10px;border-radius:50%}
+.st-card.valid{background:var(--green-bg)} .st-card.valid .st-dot{background:var(--green)}
+.st-card.invalid{background:var(--red-bg)} .st-card.invalid .st-dot{background:var(--red)}
+.st-card.info{background:var(--amber-bg)} .st-card.info .st-dot{background:var(--amber)}
+.st-card h4{font-size:14px;font-weight:700;margin-bottom:2px}
+.st-card p{font-size:12.5px;color:var(--muted)}
+.muted-p{font-size:13.5px;color:var(--muted);margin-bottom:8px}
+code{font-family:var(--mono);background:var(--muted-bg);padding:1px 6px;border-radius:4px;font-size:12.5px}
+
+/* ---- Mismatch drill-down ---- */
+.mm-item{border:1px solid var(--border);border-radius:var(--r-sm);margin-bottom:8px;overflow:hidden;background:var(--surface)}
+.mm-head{display:flex;align-items:center;gap:12px;width:100%;background:none;border:none;font-family:inherit;
+  cursor:pointer;padding:12px 14px;text-align:right;transition:background .15s}
+.mm-head:hover{background:var(--surface-2)}
+.mm-chev{color:var(--muted-2);transition:transform .2s;font-size:12px}
+.mm-item.open .mm-chev{transform:rotate(180deg)}
+.mm-id{font-weight:600;font-size:13.5px;color:var(--fg)}
+.mm-meta{font-size:13px;color:var(--muted);flex:1}
+.mm-diff{font-weight:700;font-size:13.5px}
+.mm-body{display:none;padding:14px 16px;border-top:1px solid var(--border);background:var(--surface-2)}
+.mm-item.open .mm-body{display:block;animation:fade .2s ease-out}
+.mm-formula{font-size:13px;color:var(--fg);background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:9px 12px;margin-bottom:12px}
+.mm-formula b{color:var(--primary)}
+.gap{display:grid;grid-template-columns:1fr auto;gap:4px 12px;align-items:center;margin-bottom:12px}
+.gap-name{grid-column:1/-1;font-size:12.5px;font-weight:600;color:var(--fg)}
+.gap-bars{display:flex;flex-direction:column;gap:5px}
+.gap-row{display:flex;align-items:center;gap:8px}
+.gap-lbl{font-size:11.5px;color:var(--muted);width:42px;flex:none}
+.gap-track{flex:1;height:14px;background:var(--muted-bg);border-radius:4px;overflow:hidden}
+.gap-fill{height:100%;border-radius:4px}
+.gap-fill.slip{background:var(--secondary)}
+.gap-fill.calc{background:var(--muted-2)}
+.gap-val{font-size:12px;width:88px;text-align:left;flex:none}
+.gap-diff{font-weight:700;font-size:13px;white-space:nowrap}
+.mm-why{font-size:13px;color:var(--fg);background:var(--amber-bg);border:1px solid #fde68a;border-radius:var(--r-sm);padding:10px 12px;margin-top:6px}
+.mm-why b{color:#92400e}
+
+/* ---- Component catalog (what each component gives) ---- */
+.cat-block{margin-bottom:20px}
+.cat-head{display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.cat-name{font-size:14.5px;font-weight:700;color:var(--primary)}
+.cat-pill{font-size:11.5px;font-weight:600;color:var(--muted);background:var(--muted-bg);padding:1px 8px;border-radius:999px}
+.cat-desc{font-size:12.5px;color:var(--muted);margin-bottom:10px}
+.comp-row2{display:grid;grid-template-columns:minmax(190px,1fr) 1.2fr auto;gap:12px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)}
+.comp-row2:last-child{border-bottom:none}
+.comp-info{display:flex;flex-direction:column;gap:3px;min-width:0}
+.comp-name{font-size:13px;font-weight:500;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.comp-badges{display:flex;gap:4px;flex-wrap:wrap}
+.cbadge{font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:999px}
+.cbadge.pens{background:#f5f3ff;color:#6d28d9}
+.cbadge.typ{background:var(--muted-bg);color:var(--muted)}
+.comp-track{height:12px;background:var(--muted-bg);border-radius:4px;overflow:hidden}
+.comp-fill{height:100%;border-radius:4px;background:var(--secondary)}
+.comp-fill.neg{background:var(--red)}
+.comp-mean{font-size:12.5px;font-weight:600;color:var(--fg);width:90px;text-align:left}
+@media(max-width:620px){.comp-row2{grid-template-columns:1fr auto}.comp-track{display:none}}
+
+/* ---- Presentation mode (מצב מצגת) — bigger text, less noise, for projection */
+.present-btn{appearance:none;cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:600;
+  display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:8px;
+  border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.08);color:#fff;margin-inline-end:10px}
+.present-btn:hover{background:rgba(255,255,255,.16)}
+html.present{font-size:19px}
+html.present .helper,html.present footer,html.present .hint,html.present .code-sub{display:none}
+html.present .rc-pct{font-size:34px}
+html.present .stat .v{font-size:26px}
+html.present table{font-size:16px}
+html.present .present-btn{background:#fff;color:var(--primary)}
+
+/* ---- Trend chart (תקינות לאורך זמן) */
+.trend-wrap{overflow-x:auto;margin-bottom:16px}
+.trend-svg text{font-family:inherit}
+
+/* ---- Status-flip list (עובדים שהשתנו בין חודשים) */
+.flip-note{font-size:13px;color:var(--muted);margin:4px 0 10px}
+
+/* ---- Live pay tables */
+.live-tables{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+@media(max-width:760px){.live-tables{grid-template-columns:1fr}}
+.lt-h{font-size:13.5px;font-weight:600;margin:0 0 8px;color:var(--fg)}
+
+/* ---- Executive one-pager: hidden on screen, the only thing in print */
+#exec-print{display:none}
+@media print{
+  body>*:not(#exec-print){display:none!important}
+  #exec-print{display:block;direction:rtl;font-family:inherit;color:#111;padding:6mm 2mm}
+  .ep-head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1E3A5F;padding-bottom:10px;margin-bottom:14px}
+  .ep-head h1{font-size:21px;margin:0;color:#1E3A5F}
+  .ep-sub{font-size:11.5px;color:#555;margin-top:4px}
+  .ep-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:16px}
+  .ep-kpi{border:1px solid #d9dde3;border-radius:8px;padding:8px 10px;text-align:center}
+  .ep-kpi .k{font-size:10.5px;color:#666}
+  .ep-kpi .v{font-size:19px;font-weight:700;margin-top:2px}
+  .ep-cols{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .ep-cols h3{font-size:13px;color:#1E3A5F;margin:0 0 6px}
+  #exec-print table{width:100%;border-collapse:collapse;font-size:10.5px}
+  #exec-print th{background:#1E3A5F;color:#fff;padding:4px 6px;text-align:right}
+  #exec-print td{border-bottom:1px solid #e3e6ea;padding:3px 6px}
+  #exec-print td.n{text-align:left;font-variant-numeric:tabular-nums}
+  .ep-note{font-size:9.5px;color:#666;margin-top:14px;border-top:1px solid #d9dde3;padding-top:8px}
+  .ep-foot{font-size:9.5px;color:#999;margin-top:4px}
 }
-.upload-zone.hover{border-color:var(--accent);background:var(--accent-t2)}
-.upload-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
-.upload-icon{font-size:32px;color:var(--muted);margin-bottom:10px}
-.upload-label{font-size:13px;color:var(--muted)}
-.upload-label strong{color:var(--text);font-weight:500}
-.selected-file{margin-top:.75rem;padding:8px 12px;background:var(--s2);border-radius:var(--r);
-  font-size:12px;font-family:var(--mono);color:var(--accent);display:none}
-
-/* PROGRESS */
-.progress{height:2px;background:var(--border);border-radius:1px;overflow:hidden;
-  margin:.75rem 0;display:none}
-.progress-bar{height:100%;background:var(--accent);width:0;transition:width .4s;border-radius:1px}
-.progress.visible{display:block}
-
-/* ERROR */
-.error{background:var(--red-t);border:1px solid rgba(248,113,113,.25);border-radius:var(--r);
-  padding:.75rem 1rem;font-size:13px;color:var(--red);display:none;margin-bottom:.75rem}
-.error.visible{display:block}
-
-/* RIGHT PANEL */
-.right-panel{padding:2rem;overflow-y:auto}
-
-/* EMPTY STATE */
-.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;
-  height:100%;min-height:400px;color:var(--muted);text-align:center}
-.empty-ring{width:80px;height:80px;border-radius:50%;border:1px solid var(--border2);
-  display:flex;align-items:center;justify-content:center;font-size:30px;margin-bottom:1.5rem;color:var(--muted2)}
-.empty p{font-size:14px}
-
-/* RESULT */
-.result-hidden{display:none}
-
-/* HERO */
-.hero{background:var(--s1);border:1px solid var(--border);border-radius:var(--r2);
-  padding:2rem;text-align:center;margin-bottom:1.5rem}
-.hero-label{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:10px}
-.hero-amount{font-family:var(--mono);font-size:56px;font-weight:500;color:var(--accent);
-  letter-spacing:-.02em;line-height:1}
-.hero-currency{font-size:24px;color:var(--muted);margin-left:4px}
-.hero-meta{margin-top:16px;display:flex;justify-content:center;gap:2rem}
-.hero-meta-item{text-align:center}
-.hero-meta-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
-.hero-meta-val{font-family:var(--mono);font-size:14px;font-weight:500}
-
-/* META GRID */
-.meta-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);
-  border-radius:var(--r2);overflow:hidden;margin-bottom:1.5rem}
-.meta-cell{background:var(--s1);padding:1rem 1.25rem}
-.meta-cell-label{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px}
-.meta-cell-val{font-family:var(--mono);font-size:14px;font-weight:500}
-
-/* TABLE */
-.table-wrap{background:var(--s1);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden}
-.table-head{padding:.875rem 1.25rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
-.table-title{font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
-.comp-count{font-family:var(--mono);font-size:11px;color:var(--muted2);background:var(--s2);padding:2px 8px;border-radius:20px}
-table{width:100%;border-collapse:collapse}
-th{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted2);
-  padding:10px 16px;text-align:right;border-bottom:1px solid var(--border);font-weight:500}
-td{padding:11px 16px;font-size:13px;border-bottom:1px solid var(--border)}
-tr:last-child td{border-bottom:none}
-tr:hover td{background:var(--s2)}
-.name-col{direction:rtl}
-.code-sub{font-family:var(--mono);font-size:10px;color:var(--muted);direction:ltr}
-.amount-col{font-family:var(--mono);font-size:13px;text-align:left;direction:ltr;white-space:nowrap}
-.diff-col{font-family:var(--mono);font-size:12px;text-align:left;direction:ltr}
-.badge{display:inline-block;font-size:10px;font-weight:500;padding:2px 7px;border-radius:20px;letter-spacing:.03em}
-.b-calc{background:var(--accent-t);color:var(--accent);border:1px solid rgba(200,241,53,.2)}
-.b-raw{background:var(--s3);color:var(--muted);border:1px solid var(--border2)}
-.b-pension{background:var(--green-t);color:var(--green)}
-.b-match{background:var(--green-t);color:var(--green)}
-.b-nomatch{background:var(--red-t);color:var(--red)}
-.total-row td{font-weight:500;background:var(--s2)!important}
-.c-green{color:var(--green)}
-.c-red{color:var(--red)}
-.c-muted{color:var(--muted)}
-.c-amber{color:var(--amber)}
-
-/* ACCURACY */
-.acc-hero{background:var(--s1);border:1px solid var(--border);border-radius:var(--r2);
-  padding:2rem;text-align:center;margin-bottom:1.5rem}
-.acc-pct{font-family:var(--mono);font-size:72px;font-weight:500;line-height:1}
-.acc-label{font-size:13px;color:var(--muted);margin-top:8px}
-.acc-bar-wrap{background:var(--s2);border-radius:4px;height:8px;margin:1.5rem 0;overflow:hidden}
-.acc-bar{height:100%;border-radius:4px;transition:width .6s ease;background:var(--green)}
-.stats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.5rem}
-.stat{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:1rem 1.25rem}
-.stat-label{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px}
-.stat-val{font-family:var(--mono);font-size:22px;font-weight:500}
-
-/* MINISTRY TABLE */
-.min-table{background:var(--s1);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden}
-.min-table th{text-align:right}
-.match-bar-cell{width:120px}
-.match-bar-bg{background:var(--s2);border-radius:3px;height:6px;overflow:hidden}
-.match-bar-fill{height:100%;border-radius:3px;background:var(--green);transition:width .4s}
 </style>
 </head>
 <body>
 
-<header>
-  <div class="logo"><div class="dot"></div>מנוע חישוב שכר</div>
-  <div class="status" id="status-el">מתחבר...</div>
+<header class="site">
+  <div class="wrap">
+    <div class="logo" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-6"/></svg>
+    </div>
+    <div class="brand">
+      <h1>סימולטור שכר</h1>
+      <p>בדיקת תלושים · מנהלת הגמלאות <span id="engine-build" style="opacity:.5;font-size:.8em"></span></p>
+    </div>
+    <div class="spacer"></div>
+    <button type="button" class="present-btn" id="present-btn" onclick="togglePresent()" title="מצב מצגת — טקסט מוגדל להקרנה">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+      מצב מצגת
+    </button>
+    <span class="status" id="status-el"><span class="dot"></span>מתחבר…</span>
+  </div>
 </header>
 
-<div class="layout">
+<nav class="tabs">
+  <div class="wrap" role="tablist">
+    <button class="tab active" role="tab" onclick="showTab('calc')">
+      <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>
+      עובד בודד
+    </button>
+    <button class="tab" role="tab" onclick="showTab('accuracy')">
+      <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+      בדיקת קובץ
+    </button>
+    <button class="tab" role="tab" onclick="showTab('logic')">
+      <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>
+      איך זה עובד
+    </button>
+  </div>
+</nav>
 
-  <!-- LEFT -->
-  <div class="left-panel">
-    <nav class="nav">
-      <button class="nav-tab active" onclick="showTab('calc')">עובד בודד</button>
-      <button class="nav-tab" onclick="showTab('accuracy')">בדיקת דיוק</button>
-      <button class="nav-tab" onclick="showTab('batch')">יצוא CSV</button>
-    </nav>
+<main class="wrap">
 
-    <!-- CALC TAB -->
-    <div class="tab-pane active" id="tab-calc">
-      <div class="error" id="calc-err"></div>
-      <div class="progress" id="calc-prog"><div class="progress-bar" id="calc-bar"></div></div>
-
-      <div class="section">
-        <div class="section-title">פרטי עובד</div>
-        <div class="grid2">
-          <div class="field"><label>מסד (ת.ז.)</label><input type="number" id="f-worker" value="11021106"></div>
-          <div class="field"><label>קוד משרד</label><input type="number" id="f-ministry-code" value="170"></div>
+  <!-- ============ TAB: single worker ============ -->
+  <section class="pane active" id="pane-calc">
+    <!-- Lookup a worker from an uploaded month sheet -->
+    <div class="card" style="margin-bottom:18px">
+      <div class="card-head"><h2>בדיקת עובד מתוך גיליון חודשי</h2><span class="hint">מציג את כל רכיבי השכר של העובד באותו תלוש</span></div>
+      <div class="card-body">
+        <div class="wl-grid">
+          <label class="upload wl-upload" id="wl-zone">
+            <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+            <h3>בחר גיליון גולמי של חודש</h3>
+            <p>הקובץ מנותח בדפדפן — לא נשלח לשרת</p>
+            <input type="file" accept=".xlsx" onchange="onWorkerFile(this)">
+          </label>
+          <div class="wl-pick">
+            <div class="field"><label for="wl-id">מספר עובד</label>
+              <input id="wl-id" type="text" list="wl-id-list" autocomplete="off" placeholder="בחר קובץ תחילה…" disabled onkeydown="if(event.key==='Enter'){event.preventDefault();showWorkerFromFile()}">
+              <datalist id="wl-id-list"></datalist></div>
+            <button type="button" class="btn" id="wl-btn" onclick="showWorkerFromFile()" disabled>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+              הצג תלוש
+            </button>
+            <div class="wl-meta" id="wl-file-meta"></div>
+          </div>
         </div>
-        <div class="field"><label>שם משרד</label><input type="text" id="f-ministry-name" value='מכס ומע"מ' style="direction:rtl"></div>
-        <div class="grid2">
-          <div class="field"><label>אחוז משרה</label><input type="number" id="f-job-pct" value="1.0" step="0.1" min="0" max="1"></div>
-          <div class="field"><label>אחוז גמלה</label><input type="number" id="f-pension-pct" value="0.4" step="0.05"></div>
-        </div>
-      </div>
-
-      <div class="section">
-        <div class="section-title">דירוג ודרגה</div>
-        <div class="grid2">
-          <div class="field"><label>קוד דרגה</label><input type="number" id="f-kod-darga" value="202"></div>
-          <div class="field"><label>דרגה</label><input type="text" id="f-darga-label" value="18"></div>
-        </div>
-        <div class="field"><label>דירוג</label>
-          <select id="f-droog">
-            <option value="1">1 — מנהלי</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="section">
-        <div class="section-title">ותק</div>
-        <div class="grid3">
-          <div class="field"><label>ותק חובה</label><input type="number" id="f-vatek-mandatory" value="0" step="0.25"></div>
-          <div class="field"><label>ותק רגיל</label><input type="number" id="f-vatek-regular" value="33.75" step="0.25"></div>
-          <div class="field"><label>ותק תואר ב'</label><input type="number" id="f-vatek-msc" value="0" step="0.25"></div>
-        </div>
-        <div class="field">
-          <label>ותק מחושב <span style="color:var(--accent);font-size:10px">★ משמש בנוסחה</span></label>
-          <input type="number" id="f-vatek-calc" value="33.75" step="0.25">
-        </div>
-      </div>
-
-      <div class="section">
-        <div class="section-title">חודשי חישוב</div>
-        <div class="grid3">
-          <div class="field"><label>חודש חישוב</label><input type="number" id="f-calc-month" value="228"></div>
-          <div class="field"><label>חודש רטרו</label><input type="number" id="f-retro-month" value="204"></div>
-          <div class="field"><label>מס' חודשי רטרו</label><input type="number" id="f-retro-count" value="25"></div>
-        </div>
-      </div>
-
-      <div class="section">
-        <div class="section-title">רכיבי שכר</div>
-        <div class="comp-header">
-          <span>שם רכיב</span><span>קוד</span><span>סכום</span><span></span>
-        </div>
-        <div id="comp-list"></div>
-        <button class="add-btn" onclick="addComp()">+ הוסף רכיב</button>
-      </div>
-
-      <button class="submit-btn" id="calc-btn" onclick="runCalc()">חשב שכר</button>
-    </div>
-
-    <!-- ACCURACY TAB -->
-    <div class="tab-pane" id="tab-accuracy">
-      <div class="error" id="acc-err"></div>
-      <div class="progress" id="acc-prog"><div class="progress-bar" id="acc-bar"></div></div>
-
-      <p style="font-size:13px;color:var(--muted);margin-bottom:1.25rem;line-height:1.7">
-        העלה קובץ גולמי Excel לבדיקת דיוק המנוע.<br>
-        התאמה נחשבת הפרש של עד <strong style="color:var(--accent);font-weight:500">±₪1</strong> בין המחושב לצפוי.
-      </p>
-
-      <div class="upload-zone" id="acc-zone">
-        <input type="file" id="acc-file" accept=".xlsx" onchange="runAccuracy(this)">
-        <div class="upload-icon">◎</div>
-        <div class="upload-label"><strong>גרור קובץ xlsx</strong> או לחץ לבחירה</div>
-        <div class="selected-file" id="acc-filename"></div>
+        <div class="alert" id="wl-err" role="alert"></div>
       </div>
     </div>
 
-    <!-- BATCH TAB -->
-    <div class="tab-pane" id="tab-batch">
-      <div class="error" id="batch-err"></div>
-      <div class="progress" id="batch-prog"><div class="progress-bar" id="batch-bar"></div></div>
+    <div class="grid">
+      <!-- input form -->
+      <form class="card" onsubmit="event.preventDefault();runCalc()">
+        <div class="card-head"><h2>נתוני עובד</h2><span class="hint">חישוב שכר בודד</span></div>
+        <div class="card-body">
+          <div class="section-label">זיהוי</div>
+          <div class="row2">
+            <div class="field"><label for="f-worker">מספר עובד <span class="req">*</span></label>
+              <input id="f-worker" type="number" value="11022957"></div>
+            <div class="field"><label for="f-ministry-code">קוד משרד</label>
+              <input id="f-ministry-code" type="number" value="142" list="ministry-code-list" autocomplete="off">
+              <datalist id="ministry-code-list"></datalist></div>
+          </div>
+          <div class="field"><label for="f-ministry-name">שם משרד / גוף</label>
+            <input id="f-ministry-name" type="text" value="משרד התיירות" list="ministry-name-list" autocomplete="off" placeholder="בחר או הקלד לחיפוש…">
+            <datalist id="ministry-name-list"></datalist></div>
 
-      <p style="font-size:13px;color:var(--muted);margin-bottom:1.25rem;line-height:1.7">
-        העלה קובץ גולמי Excel לקבלת קובץ CSV עם תוצאות חישוב לכל העובדים.
-      </p>
+          <div class="section-label">דירוג ודרגה</div>
+          <div class="row2">
+            <div class="field"><label for="f-droog">דירוג (מסלול)</label>
+              <input id="f-droog" type="text" list="tracks-list" autocomplete="off" value="מח&quot;ר" placeholder="הקלד לחיפוש…">
+              <datalist id="tracks-list"></datalist></div>
+            <div class="field"><label for="f-darga-label">דרגה <span class="req">*</span></label>
+              <input id="f-darga-label" type="text" value="42+" list="grades-list" autocomplete="off" placeholder="הקלד לחיפוש…">
+              <datalist id="grades-list"></datalist></div>
+          </div>
+          <div class="helper">בחר דרגה מהרשימה או הקלד לחיפוש (למשל ‎18, ‎42+‎).</div>
 
-      <div class="upload-zone" id="batch-zone">
-        <input type="file" id="batch-file" accept=".xlsx" onchange="runBatch(this)">
-        <div class="upload-icon">⬆</div>
-        <div class="upload-label"><strong>גרור קובץ xlsx</strong> או לחץ לבחירה</div>
-        <div class="selected-file" id="batch-filename"></div>
+          <div class="section-label">ותק ומשרה</div>
+          <div class="row2">
+            <div class="field"><label for="f-vatek-calc">ותק לחישוב (שנים) <span class="req">*</span></label>
+              <input id="f-vatek-calc" type="number" step="0.01" value="40.5"></div>
+            <div class="field"><label for="f-job-pct">חלקיות משרה</label>
+              <input id="f-job-pct" type="number" step="0.01" value="1"></div>
+          </div>
+
+          <div class="section-label">רכיבי שכר</div>
+          <div id="comp-list"></div>
+          <button type="button" class="add-comp" onclick="addComp()">+ הוספת רכיב</button>
+
+          <button class="btn" id="calc-btn" type="submit">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 10h2M14 10h2M8 14h2M14 14h2M8 18h2M14 18h2"/></svg>
+            חשב שכר
+          </button>
+          <div class="progress" id="calc-prog"><div class="fill" id="calc-bar"></div></div>
+          <div class="alert" id="calc-err" role="alert"></div>
+        </div>
+      </form>
+
+      <!-- result -->
+      <div class="card" id="calc-result" style="display:none">
+        <div class="card-head"><h2 id="r-title">תוצאת חישוב</h2><span class="hint" id="r-comp-count"></span></div>
+        <div class="card-body">
+          <div class="wl-worker" id="r-worker" style="display:none"></div>
+          <div class="verdict" id="r-verdict">
+            <div class="vicon" id="r-vicon"></div>
+            <div><div class="vt" id="r-match"></div><div class="vs" id="r-verdict-sub"></div></div>
+          </div>
+          <div class="stats">
+            <div class="stat"><div class="k">שכר מחושב</div><div class="v"><span class="num" id="r-total"></span></div></div>
+            <div class="stat"><div class="k">שכר בתלוש</div><div class="v sm"><span class="num" id="r-expected"></span></div></div>
+            <div class="stat"><div class="k">הפרש</div><div class="v sm"><span class="num" id="r-diff"></span></div></div>
+            <div class="stat"><div class="k">מקדם ותק</div><div class="v sm"><span class="num" id="m-mult"></span></div></div>
+          </div>
+          <div class="stats" style="grid-template-columns:repeat(3,1fr)">
+            <div class="stat"><div class="k">דרגה</div><div class="v sm" id="m-grade"></div></div>
+            <div class="stat"><div class="k">שכר יסוד (ותק 0)</div><div class="v sm"><span class="num" id="m-base"></span></div></div>
+            <div class="stat"><div class="k">ותק</div><div class="v sm" id="m-vatek"></div></div>
+          </div>
+          <div id="r-findings"></div>
+          <table>
+            <thead><tr><th>רכיב</th><th>סוג</th><th style="text-align:left">בתלוש</th><th style="text-align:left">תקני</th><th style="text-align:left">הפרש</th></tr></thead>
+            <tbody id="comp-tbody"></tbody>
+          </table>
+        </div>
       </div>
+    </div>
+  </section>
+
+  <!-- ============ TAB: file accuracy ============ -->
+  <section class="pane" id="pane-accuracy">
+    <div class="grid">
+      <div class="card">
+        <div class="card-head"><h2>בדיקת קובץ גולמי</h2></div>
+        <div class="card-body">
+          <label class="upload" id="acc-zone">
+            <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+            <h3>בחר קובץ ‎.xlsx‎ (או כמה)</h3>
+            <p>או גרור לכאן קובץ גולמי — אפשר לבחור כמה קבצים יחד</p>
+            <input type="file" accept=".xlsx" multiple onchange="runAccuracy(this)">
+          </label>
+          <div class="filename" id="acc-filename"></div>
+          <label style="display:flex;align-items:center;gap:8px;margin:8px 2px;font-size:.92em;cursor:pointer">
+            <input type="checkbox" id="pure-toggle">
+            <span><strong>Progim בלבד</strong> — הרצת החוברת כפי-שהיא, בלי תוספות התוכנה. מוסיף גיליון "המלצות ל-Progim" (מה להוסיף לחוברת). בחר לפני העלאת הקבצים.</span>
+          </label>
+          <div class="progress" id="acc-prog"><div class="fill" id="acc-bar"></div></div>
+          <div class="alert" id="acc-err" role="alert"></div>
+          <p class="helper" style="margin-top:14px">הקובץ מנותח מול מנוע השכר; כל עובד מסומן כ<strong>תלוש תקין</strong> (הפרש ≤ ₪1) או <strong>שגוי</strong>.
+             העיבוד מתבצע ב<strong>דפדפן</strong> — הקובץ אינו נשלח לשרת, ואין מגבלת גודל.
+             לאחר הבדיקה ניתן להוריד מכאן גם את <strong>הגולמי המסומן</strong> וגם את <strong>יצוא התוצאות</strong>.
+             בחירת <strong>כמה קבצים יחד</strong> מפיקה <strong>קובץ אחוד</strong> אחד (סיכום פר-קובץ + שורה לכל עובד מכל הקבצים).</p>
+        </div>
+      </div>
+
+      <!-- Bulk (multi-file) result: shown when more than one file is uploaded -->
+      <div class="card" id="bulk-result" style="display:none">
+        <div class="card-head"><h2>בדיקה מרובת-קבצים</h2><span class="hint" id="bulk-time"></span></div>
+        <div class="card-body">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:14px">
+            <button type="button" class="btn" id="dl-unified-btn" onclick="downloadUnified()">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+              הורד קובץ אחוד (‎.xlsx‎)
+            </button>
+            <button type="button" class="btn" onclick="printExecSummary()" style="background:var(--surface);color:var(--primary);border:1.5px solid var(--primary)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+              סיכום מנהלים — הדפסה
+            </button>
+          </div>
+          <div class="filename" id="bulk-dl-filename"></div>
+          <p class="helper" style="margin-bottom:14px">הקובץ האחוד כולל <strong>לוח בקרה</strong>, <strong>שגויים לבדיקה</strong> (ממוין לפי ₪), <strong>פר עובד</strong> ו<strong>פילוח משרדים</strong>.</p>
+
+          <div class="section-label">תקינות לאורך זמן</div>
+          <div id="bulk-trend" class="trend-wrap"></div>
+
+          <table>
+            <thead><tr><th>קובץ / חודש</th><th>עובדים</th><th>תקין</th><th>שגוי</th><th>שווי חריגות</th><th>תקינות</th></tr></thead>
+            <tbody id="bulk-tbody"></tbody>
+          </table>
+
+          <div id="bulk-flips"></div>
+        </div>
+      </div>
+
+      <div class="card" id="acc-result" style="display:none">
+        <div class="card-head"><h2>סיכום בדיקה</h2><span class="hint" id="a-time"></span></div>
+        <div class="card-body">
+          <!-- hero: accuracy ring + status legend -->
+          <div class="acc-hero">
+            <div class="ring-wrap">
+              <svg viewBox="0 0 120 120" class="acc-ring" aria-hidden="true">
+                <circle class="ring-bg" cx="60" cy="60" r="52"/>
+                <circle class="ring-fg" id="a-ring" cx="60" cy="60" r="52"/>
+              </svg>
+              <div class="ring-center"><div class="rc-pct" id="a-pct">—</div><div class="rc-lbl">תקינות</div></div>
+            </div>
+            <div class="acc-legend" id="a-legend"></div>
+          </div>
+          <div class="bar-wrap" style="margin-bottom:6px"><div class="bar-fill" id="a-bar"></div></div>
+          <div class="helper" id="a-sub" style="margin-bottom:16px"></div>
+          <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:18px">
+            <div class="stat"><div class="k">סה"כ עובדים</div><div class="v sm"><span class="num" id="a-total"></span></div></div>
+            <div class="stat"><div class="k">הפרש ממוצע</div><div class="v sm"><span class="num" id="a-avg"></span></div></div>
+            <div class="stat"><div class="k">הפרש מרבי</div><div class="v sm"><span class="num" id="a-max"></span></div></div>
+          </div>
+
+          <div class="section-label">הורדות</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:6px">
+            <button type="button" class="btn" id="dl-export-btn" onclick="downloadHighlighted()">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+              גולמי מסומן — שגיאות בצהוב
+            </button>
+            <button type="button" class="btn" id="dl-batch-btn" onclick="downloadBatch()">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+              יצוא תוצאות + דוח שגויים
+            </button>
+            <button type="button" class="btn" onclick="printExecSummary()" style="background:var(--surface);color:var(--primary);border:1.5px solid var(--primary)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+              סיכום מנהלים — הדפסה
+            </button>
+          </div>
+          <p class="helper" style="margin-bottom:18px">
+            <strong>גולמי מסומן</strong> — אותו מבנה "גולמי מעודכן", רק התאים השגויים צבועים בצהוב עם הערך התקני בהערה.
+            <strong>יצוא תוצאות</strong> — קובץ Excel עם שלוש לשוניות: תקין, לבדיקה, ו<strong>דוח שגויים</strong> —
+            פירוט מדויק לכל תלוש שגוי (תלוש ריק / בסיס כפול / פער ביסוד משולב / פער בותק / פער בגמול וכד׳).
+            שתי ההורדות כוללות את דוח השגויים.</p>
+          <div class="filename" id="dl-filename"></div>
+          <table>
+            <thead><tr><th>משרד / גוף</th><th>עובדים</th><th>תקינים</th><th>תקינות</th><th class="match-cell"></th></tr></thead>
+            <tbody id="ministry-tbody"></tbody>
+          </table>
+
+          <h3 class="logic-h" id="mm-title" style="display:none">תלושים שגויים לבדיקה</h3>
+          <p class="helper" id="mm-hint" style="display:none">לחץ על תלוש כדי לראות היכן נוצר הפער ומדוע.</p>
+          <div id="mismatch-list"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ TAB: logic / how it works ============ -->
+  <section class="pane" id="pane-logic">
+    <div class="logic">
+      <div class="card" id="progim-admin">
+        <div class="card-head"><h2>עדכון חוברת Progim</h2><span class="hint" id="progim-src"></span></div>
+        <div class="card-body">
+          <p class="lead">העלאת חוברת Progim חדשה (‎.xlsm‎/‎.xlsx‎) — הנתונים מחולצים ונשמרים,
+             וכל <strong>ריענון של האתר או חיבור ממחשב אחר</strong> ישתמש בקובץ האחרון שהועלה.
+             העדכון בטוח (מיזוג "הוספה-בלבד"): מוסיף סמלי-בסיס חדשים ומעדכן טבלאות שכר, בלי לפגוע באחוזים המכוילים.</p>
+          <div style="display:grid;gap:10px;max-width:520px">
+            <input type="file" id="progim-file" accept=".xlsm,.xlsx" style="font-size:.92em">
+            <input type="password" id="progim-token" placeholder="סיסמת מנהל" autocomplete="off"
+                   style="padding:8px 10px;border:1.5px solid var(--border,#d0d5dd);border-radius:8px;font-size:.95em">
+            <button type="button" class="btn" id="progim-up-btn" onclick="uploadProgim()">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+              העלה ועדכן
+            </button>
+          </div>
+          <div id="progim-result" style="margin-top:12px;font-size:.92em"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>המוח של הסימולטור — איך מחושב השכר</h2></div>
+        <div class="card-body">
+          <p class="lead">הסימולטור מחשב מה <strong>אמור</strong> להיות שכר העובד לפי טבלאות השכר הרשמיות,
+             ומשווה לסכום שבתלוש. הפרש של עד ₪1 → <strong>תלוש תקין</strong>; הפרש גדול יותר → <strong>שגוי</strong>.</p>
+
+          <div class="formula">
+            <div class="formula-line">שכר משולב <span class="op">=</span> שכר יסוד<sub>(דרגה)</sub> <span class="op">×</span> מקדם ותק<sub>(דירוג, ותק)</sub> <span class="op">×</span> חלקיות</div>
+            <div class="formula-split">
+              <span>יסוד משולב <span class="op">=</span> שכר יסוד × חלקיות</span>
+              <span>תוספת ותק <span class="op">=</span> שכר יסוד × (מקדם − 1) × חלקיות</span>
+            </div>
+          </div>
+
+          <div class="steps">
+            <div class="step"><div class="step-n">1</div><div><h4>דרגה → שכר יסוד</h4>
+              <p>תווית הדרגה (כולל ‎+‎, למשל ‎42+‎) נקבעת לפי טבלת DARGA. נטענו <strong id="lg-grades">75</strong> דרגות.
+                 בקבצים ישנים שבהם עמודת הדרגה איבדה את ה-‎+‎, המנוע משחזר את דרגת ה-‎+‎ מקוד הדרגה
+                 (זיהוי עצמי לכל קובץ).</p></div></div>
+            <div class="step"><div class="step-n">2</div><div><h4>דירוג + ותק → מקדם</h4>
+              <p>לכל מסלול דירוג טור מקדמים נפרד. הערך מחושב ב<strong>אינטרפולציה ליניארית</strong> בין נקודות הרשת
+                 (רזולוציית רבע שנה), מה שהעלה את הדיוק מ-78% ל-93%.</p></div></div>
+            <div class="step"><div class="step-n">3</div><div><h4>תקרת ותק לפי מסלול</h4>
+              <p>כשהוותק עובר את תקרת המסלול המקדם נעצר: מינהלי 37 שנים, מח"ר 40 שנים.</p></div></div>
+            <div class="step"><div class="step-n">4</div><div><h4>השוואה וסיווג</h4>
+              <p>סכום הרכיבים המחושב מושווה לתלוש ומסווג לאחד מארבעה מצבים (למטה).</p></div></div>
+          </div>
+
+          <h3 class="logic-h">ארבעת מצבי התלוש</h3>
+          <div class="status-grid">
+            <div class="st-card valid"><span class="st-dot"></span><h4>תקין</h4><p>הבסיס המחושב תואם את התלוש (±₪1).</p></div>
+            <div class="st-card invalid"><span class="st-dot"></span><h4>שגוי</h4><p>בסיס קיים אך אינו תואם — דורש בדיקה.</p></div>
+            <div class="st-card info"><span class="st-dot"></span><h4>ללא שכר בסיס פעיל</h4><p>אין בסיס פעיל (גמלאי/לא-פעיל).</p></div>
+            <div class="st-card info"><span class="st-dot"></span><h4>רטרו / רב-תקופתי</h4><p>יותר מתקופת שכר אחת בתלוש.</p></div>
+          </div>
+
+          <h3 class="logic-h">איך עובדת החוקה — אימות רכיבי התוספות</h3>
+          <p class="muted-p">מעבר לבסיס, התלוש מלא ברכיבי תוספות ("3.6% ת. שכר", "הסכם 2011", "תוספת בתי משפט"…).
+             ה<strong>חוקה</strong> היא אוסף הנוסחאות הרשמיות של הרכיבים האלה, כפי שהן כתובות בחוברת ה-Progim —
+             והמנוע משתמש בהן כדי לבדוק שגם התוספות מחושבות נכון, לא רק הבסיס.</p>
+
+          <div class="formula">
+            <div class="formula-line">רכיב אחוזי צפוי <span class="op">=</span> אחוז רשמי <span class="op">×</span> Σ סכומי סמלי הבסיס שבתלוש</div>
+          </div>
+
+          <div class="steps">
+            <div class="step"><div class="step-n">1</div><div><h4>המקור: נוסחאות ה-Progim</h4>
+              <p>בגיליון <code>SACHAR</code> יש עמודה לכל סמל: הקוד, האחוז והנוסחה — שמפנה במפורש לסמלים
+                 אחרים. ההפניות האלה הן <strong>הרכב הבסיס המדויק</strong> של כל אחוז (לבסיס של 3.6% יש
+                 ‎60+‎ סמלים). הכללים מחולצים ל-<code>component_rules.json</code> ונטענים בזמן ריצה.</p></div></div>
+            <div class="step"><div class="step-n">2</div><div><h4>שלושה סוגי כללים</h4>
+              <p><strong>אחוזי</strong> — האחוז מוחל על סכומי הבסיס <em>שבתלוש עצמו</em>, כך שהרכיב נבחן
+                 בנפרד מהבסיס. <strong>ידני</strong> (4120, 4173, 4643, 4935) — אין נוסחה, הסכום מדווח ידנית
+                 ומתקבל כפי שהוא. <strong>שקלי/טבלאי</strong> — סכום מטבלת tosafot (שלב המשך).</p></div></div>
+            <div class="step"><div class="step-n">3</div><div><h4>כל אחוז רשמי מתקבל</h4>
+              <p>ההסכמים נכנסו במדרגות ויש וריאנטים לפי מסלול: הסכם 2011 — ‎2.25%→4%→6.25%→7.25%‎;
+                 הסכם 2024 — ‎2%→3.5%→5%→6%‎ (פעימות 12.2024–4.2027, מינהלי ‎3.94%‎).
+                 תלוש תקין אם הוא תואם (±₪1) <strong>אחוז רשמי כלשהו</strong> על הבסיס הנכון —
+                 סכום שרירותי לא יתאים לאף אחד.</p></div></div>
+            <div class="step"><div class="step-n">4</div><div><h4>אמון מכייל-עצמית לכל קובץ</h4>
+              <p>לפני שכלל מסמן עובד, הוא חייב להוכיח את עצמו על הקובץ עצמו: רק אם הוא מתאמת על
+                 <strong>‎97%+‎ מנושאי הסמל</strong> (ולפחות 20) — החריגים הבודדים שלו מסומנים. כלל שנכשל
+                 רוחבית (הרכב בסיס של תקופה אחרת) <strong>מושתק אוטומטית</strong>: אם 15% מהעובדים "נכשלים"
+                 באותו כלל — הבעיה בכלל, לא בעובדים.</p></div></div>
+          </div>
+
+          <p class="muted-p">כשכלל מהימן תופס חריגה: העובד מסווג <strong>שגוי</strong> גם אם הבסיס תקין,
+             ההפרש נרשם בעמודת "רכיבים חריגים", ובגולמי המסומן התא הספציפי נצבע צהוב עם הערך התקני בהערה.
+             כך תא צהוב הוא <strong>תמיד פער אמיתי ובר-הסבר</strong> — גם על קבצים היסטוריים.</p>
+
+          <h3 class="logic-h">תוצאות אימות — קובץ 02.26 (מח"ר)</h3>
+          <p class="muted-p">2,646 עובדים, כל הדרגות נפתרו. שיעור תקינות על התלושים הפעילים: <strong>93.3%</strong>.
+             מדד התקינות מחושב על תלושים פעילים בלבד (תקין + שגוי), ואינו "נענש" על גמלאים או תלושים רב-תקופתיים.</p>
+          <p class="muted-p">פירוט מלא: ראו <code>ENGINE.md</code> במאגר.</p>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:20px">
+        <div class="card-head"><h2>טבלת השכר החיה</h2><span class="hint">הנתונים שהמנוע משתמש בהם כרגע</span></div>
+        <div class="card-body">
+          <p class="muted-p">שקיפות מלאה: אלו בדיוק טבלאות ה-DARGA ומסלולי הוותק שנטענו מחוברת ה-Progim
+             ומשמשות את כל חישובי הבדיקה. מה שרואים כאן — זה מה שהמנוע מחשב איתו.</p>
+          <div class="live-tables">
+            <div>
+              <h4 class="lt-h">מסלולי דירוג ותקרות ותק</h4>
+              <table><thead><tr><th>קוד</th><th>מסלול</th><th style="text-align:left">תקרת ותק</th></tr></thead>
+                <tbody id="lt-tracks"><tr><td colspan="3" class="c-muted">טוען…</td></tr></tbody></table>
+            </div>
+            <div>
+              <h4 class="lt-h">דרגה ← שכר יסוד (ותק 0) <input id="lt-filter" type="text" placeholder="סינון דרגה…" oninput="renderLiveGrades()" style="margin-right:10px;padding:4px 8px;font-size:12.5px;border:1px solid var(--border);border-radius:6px;width:110px"></h4>
+              <div style="max-height:340px;overflow-y:auto">
+              <table><thead><tr><th>דרגה</th><th style="text-align:left">שכר יסוד</th></tr></thead>
+                <tbody id="lt-grades"><tr><td colspan="2" class="c-muted">טוען…</td></tr></tbody></table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:20px">
+        <div class="card-head"><h2>מה כל רכיב שכר נותן</h2><span class="hint" id="comp-count"></span></div>
+        <div class="card-body">
+          <p class="muted-p">תלוש בנוי מעשרות רכיבים. להלן הסיווג שלהם, וה<strong>תרומה הטיפוסית</strong> של כל רכיב לשכר (ממוצע לפי קובץ 02.26). תג <b>פנסיוני</b> = הרכיב נכלל ב"משכורת קובעת" לחישוב הפנסיה.</p>
+          <div id="comp-cats"><p class="muted-p">טוען רכיבים…</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- Executive one-pager: hidden on screen, becomes the whole page in print -->
+<section id="exec-print" aria-hidden="true">
+  <div class="ep-head">
+    <div>
+      <h1>בדיקת התאמת תלושים — סיכום מנהלים</h1>
+      <div class="ep-sub" id="ep-sub"></div>
+    </div>
+    <div class="ep-logo">
+      <svg width="34" height="34" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#1E3A5F"/><path d="M9 16.5l4.5 4.5L23 11" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </div>
   </div>
-
-  <!-- RIGHT -->
-  <div class="right-panel" id="right-panel">
-
-    <div class="empty" id="empty-state">
-      <div class="empty-ring">◈</div>
-      <p>מלא פרמטרים ולחץ חשב שכר<br>או העלה קובץ לבדיקת דיוק</p>
-    </div>
-
-    <!-- CALC RESULT -->
-    <div class="result-hidden" id="calc-result">
-      <div class="hero">
-        <div class="hero-label">שכר כולל מחושב</div>
-        <div class="hero-amount"><span class="hero-currency">₪</span><span id="r-total">0</span></div>
-        <div class="hero-meta">
-          <div class="hero-meta-item">
-            <div class="hero-meta-label">צפוי (גולמי)</div>
-            <div class="hero-meta-val" id="r-expected">—</div>
-          </div>
-          <div class="hero-meta-item">
-            <div class="hero-meta-label">הפרש</div>
-            <div class="hero-meta-val" id="r-diff">—</div>
-          </div>
-          <div class="hero-meta-item">
-            <div class="hero-meta-label">התאמה</div>
-            <div class="hero-meta-val" id="r-match">—</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="meta-grid">
-        <div class="meta-cell"><div class="meta-cell-label">דרגה</div><div class="meta-cell-val" id="m-grade">—</div></div>
-        <div class="meta-cell"><div class="meta-cell-label">שכר בסיס</div><div class="meta-cell-val" id="m-base">—</div></div>
-        <div class="meta-cell"><div class="meta-cell-label">ותק מחושב</div><div class="meta-cell-val" id="m-vatek">—</div></div>
-        <div class="meta-cell"><div class="meta-cell-label">מקדם ותק</div><div class="meta-cell-val" id="m-mult">—</div></div>
-      </div>
-
-      <div class="table-wrap">
-        <div class="table-head">
-          <span class="table-title">פירוט רכיבים</span>
-          <span class="comp-count" id="r-comp-count">0 רכיבים</span>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th>רכיב</th>
-              <th>סוג</th>
-              <th style="direction:ltr;text-align:left">סכום ₪</th>
-              <th style="direction:ltr;text-align:left">הפרש</th>
-            </tr>
-          </thead>
-          <tbody id="comp-tbody"></tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- ACCURACY RESULT -->
-    <div class="result-hidden" id="acc-result">
-      <div class="acc-hero">
-        <div class="hero-label">דיוק המנוע</div>
-        <div class="acc-pct" id="a-pct" style="color:var(--green)">—%</div>
-        <div class="acc-label" id="a-sub">—</div>
-        <div class="acc-bar-wrap"><div class="acc-bar" id="a-bar" style="width:0"></div></div>
-        <div style="font-size:12px;color:var(--muted)">סף התאמה: הפרש עד ±₪1 בין מחושב לצפוי</div>
-      </div>
-
-      <div class="stats-grid">
-        <div class="stat">
-          <div class="stat-label">סה"כ עובדים</div>
-          <div class="stat-val" id="a-total">—</div>
-        </div>
-        <div class="stat">
-          <div class="stat-label">מותאמים</div>
-          <div class="stat-val c-green" id="a-matched">—</div>
-        </div>
-        <div class="stat">
-          <div class="stat-label">לא מותאמים</div>
-          <div class="stat-val c-red" id="a-unmatched">—</div>
-        </div>
-        <div class="stat">
-          <div class="stat-label">ממוצע הפרש</div>
-          <div class="stat-val" id="a-avg">—</div>
-        </div>
-        <div class="stat">
-          <div class="stat-label">מקסימום הפרש</div>
-          <div class="stat-val" id="a-max">—</div>
-        </div>
-        <div class="stat">
-          <div class="stat-label">זמן עיבוד</div>
-          <div class="stat-val" id="a-time">—</div>
-        </div>
-      </div>
-
-      <div class="min-table">
-        <div class="table-head">
-          <span class="table-title">פירוט לפי משרד</span>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th>משרד</th>
-              <th>עובדים</th>
-              <th>מותאמים</th>
-              <th>דיוק</th>
-              <th class="match-bar-cell"></th>
-            </tr>
-          </thead>
-          <tbody id="ministry-tbody"></tbody>
-        </table>
-      </div>
-    </div>
-
+  <div class="ep-kpis" id="ep-kpis"></div>
+  <div class="ep-cols">
+    <div><h3>פילוח לפי חודש</h3><table id="ep-months"></table></div>
+    <div><h3>החריגות הגדולות ביותר (₪)</h3><table id="ep-top"></table></div>
   </div>
-</div>
+  <h3 style="margin-top:14px">פערים לפי סמל שכר — כמות וסיבה</h3>
+  <table id="ep-codes"></table>
+  <p class="ep-note">תלוש תקין = הפרש של עד ₪1 בין השכר המחושב לפי טבלאות השכר הרשמיות (Progim) לבין התלוש בפועל.
+     שווי חריגות = סכום ההפרשים המוחלטים בתלושים השגויים. גמלאים ותלושי רטרו אינם נספרים במדד.</p>
+  <div class="ep-foot" id="ep-foot"></div>
+</section>
 
+<footer>סימולטור שכר · מנוע מבוסס טבלאות Progim · בדיקת התאמת תלושים</footer>
+
+<!-- File processing runs in the browser: SheetJS reads the xlsx, engine.js runs
+     the validation, ExcelJS writes the highlighted export. Nothing is uploaded. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<script src="engine.js?v=2026-07-18a"></script>
 <script>
-const API = 'https://salary-engine.onrender.com';
-let _csvBlob = null;
+const API = '';
+// Surface the loaded engine build so a stale (browser-cached) engine.js is
+// obvious — check the console / the footer marker against the deploy.
+try { console.log('SalaryEngine build:', (window.SalaryEngine||{}).BUILD); } catch(e){}
+document.addEventListener('DOMContentLoaded', () => {
+  const m = document.getElementById('engine-build');
+  if (m && window.SalaryEngine) m.textContent = 'engine ' + SalaryEngine.BUILD;
+  if (typeof refreshProgimStatus === 'function') refreshProgimStatus();
+});
 
-async function checkStatus() {
+async function checkStatus(){
   const el = document.getElementById('status-el');
-  try {
-    const r = await fetch(API + '/api/info');
-    const d = await r.json();
-    el.textContent = `פעיל · ${d.grades_loaded} דרגות`;
+  try{
+    const r = await fetch(API+'/api/info'); const d = await r.json();
+    el.innerHTML = `<span class="dot"></span>פעיל · ${d.grades_loaded} דרגות · ${d.tracks_loaded||''} מסלולים`;
     el.className = 'status ok';
-  } catch {
-    el.textContent = 'לא מחובר';
-    el.className = 'status err';
-  }
+  }catch{ el.innerHTML = '<span class="dot"></span>לא מחובר'; el.className='status err'; }
 }
 
-function showTab(name) {
-  document.querySelectorAll('.nav-tab').forEach((t,i) => {
-    const names = ['calc','accuracy','batch'];
-    t.classList.toggle('active', names[i] === name);
-  });
-  document.querySelectorAll('.tab-pane').forEach((p,i) => {
-    const names = ['tab-calc','tab-accuracy','tab-batch'];
-    p.classList.toggle('active', names[i] === 'tab-'+name);
-  });
+let _trackByName={};
+async function loadTracks(){
+  try{
+    const r = await fetch(API+'/api/tracks'); const d = await r.json();
+    if(!d.tracks||!d.tracks.length) return;
+    const dl=document.getElementById('tracks-list'); dl.innerHTML='';
+    d.tracks.forEach(t=>{
+      const name=t.name||('מסלול '+t.code);
+      _trackByName[name]=t.code;
+      const o=document.createElement('option'); o.value=name;
+      o.label=t.max_vatek?`קוד ${t.code} · ותק עד ${t.max_vatek}`:`קוד ${t.code}`;
+      dl.appendChild(o);
+    });
+  }catch{}
+}
+function resolveTrack(v){
+  if(v in _trackByName) return _trackByName[v];
+  const n=parseInt(v); return isNaN(n)?1:n;
+}
+let _minByName={}, _minByCode={};
+async function loadMinistries(){
+  try{
+    const r=await fetch(API+'/api/ministries'); const d=await r.json();
+    const nameDl=document.getElementById('ministry-name-list');
+    const codeDl=document.getElementById('ministry-code-list');
+    nameDl.innerHTML=''; codeDl.innerHTML='';
+    (d.ministries||[]).forEach(m=>{
+      if(!m.name) return;
+      _minByName[m.name]=m.code; _minByCode[String(m.code)]=m.name;
+      const on=document.createElement('option'); on.value=m.name; on.label=`קוד ${m.code} · ${m.workers} עובדים`; nameDl.appendChild(on);
+      const oc=document.createElement('option'); oc.value=m.code; oc.label=m.name; codeDl.appendChild(oc);
+    });
+    const nameEl=document.getElementById('f-ministry-name'), codeEl=document.getElementById('f-ministry-code');
+    nameEl.addEventListener('change',()=>{ const c=_minByName[nameEl.value.trim()]; if(c!=null) codeEl.value=c; });
+    codeEl.addEventListener('change',()=>{ const n=_minByCode[codeEl.value.trim()]; if(n) nameEl.value=n; });
+  }catch{}
 }
 
-function addComp(name='', code='', amount='') {
-  const list = document.getElementById('comp-list');
-  const d = document.createElement('div');
-  d.className = 'comp-row';
-  d.innerHTML = `
-    <input type="text" placeholder="שם רכיב" value="${name}" style="direction:rtl;font-family:var(--sans)">
-    <input type="number" placeholder="קוד" value="${code}">
-    <input type="number" placeholder="סכום" value="${amount}" step="0.01">
-    <button class="rm-btn" onclick="this.parentElement.remove()">×</button>`;
+async function loadComponents(){
+  try{
+    const r=await fetch(API+'/api/components'); const d=await r.json();
+    const cats=d.categories||{}, comps=d.components||[];
+    document.getElementById('comp-count').textContent=comps.length+' רכיבים';
+    const maxAbs=Math.max(1,...comps.map(c=>Math.abs(c.mean)));
+    const wrap=document.getElementById('comp-cats'); wrap.innerHTML='';
+    Object.keys(cats).forEach(key=>{
+      const list=comps.filter(c=>c.category===key);
+      if(!list.length) return;
+      const label=cats[key][0], desc=cats[key][1];
+      const block=document.createElement('div'); block.className='cat-block';
+      block.innerHTML=`<div class="cat-head"><span class="cat-name">${label}</span><span class="cat-pill">${list.length}</span></div>
+        <div class="cat-desc">${desc}</div>`;
+      list.sort((a,b)=>Math.abs(b.mean)-Math.abs(a.mean));
+      list.forEach(c=>{
+        const w=Math.max(2,Math.abs(c.mean)/maxAbs*100), neg=c.mean<0;
+        const row=document.createElement('div'); row.className='comp-row2';
+        row.innerHTML=`<div class="comp-info">
+            <span class="comp-name">${c.name||('רכיב '+c.code)}</span>
+            <span class="comp-badges">${c.pensionable?'<span class="cbadge pens">פנסיוני</span>':''}<span class="cbadge typ">${c.type}</span></span>
+          </div>
+          <div class="comp-track"><div class="comp-fill ${neg?'neg':''}" style="width:${w}%"></div></div>
+          <div class="comp-mean num">${neg?'−':''}₪${fmt(Math.abs(c.mean))}</div>`;
+        block.appendChild(row);
+      });
+      wrap.appendChild(block);
+    });
+  }catch(e){ document.getElementById('comp-cats').innerHTML='<p class="muted-p">שגיאה בטעינת הרכיבים.</p>'; }
+}
+
+async function loadGrades(){
+  try{
+    const r=await fetch(API+'/api/grades'); const d=await r.json();
+    const dl=document.getElementById('grades-list'); dl.innerHTML='';
+    (d.grades||[]).forEach(g=>{
+      const o=document.createElement('option'); o.value=g.darga_label;
+      o.label='₪'+Number(g.base_salary).toLocaleString('he-IL',{minimumFractionDigits:2,maximumFractionDigits:2});
+      dl.appendChild(o);
+    });
+  }catch{}
+}
+
+function showTab(name){
+  const names=['calc','accuracy','logic'];
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',names[i]===name));
+  document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('active',p.id==='pane-'+name));
+}
+
+function addComp(name='',code='',amount=''){
+  const list=document.getElementById('comp-list');
+  const d=document.createElement('div'); d.className='comp-row';
+  d.innerHTML=`<input type="text" placeholder="שם רכיב" value="${name}" aria-label="שם רכיב">
+    <input type="number" placeholder="קוד" value="${code}" aria-label="קוד רכיב">
+    <input type="number" placeholder="סכום" value="${amount}" step="0.01" aria-label="סכום">
+    <button type="button" class="rm-btn" aria-label="הסר רכיב" onclick="this.parentElement.remove()">×</button>`;
   list.appendChild(d);
 }
-
-function getComps() {
-  return Array.from(document.querySelectorAll('#comp-list .comp-row')).map(r => {
-    const i = r.querySelectorAll('input');
+function getComps(){
+  return Array.from(document.querySelectorAll('#comp-list .comp-row')).map(r=>{
+    const i=r.querySelectorAll('input');
     return {name:i[0].value||'',code:parseInt(i[1].value)||0,amount:parseFloat(i[2].value)||0,pensionable:'כן'};
-  }).filter(c => c.code > 0);
+  }).filter(c=>c.code>0);
 }
-
-function fmt(n, dec=2) {
-  if(n==null) return '—';
-  return Number(n).toLocaleString('he-IL',{minimumFractionDigits:dec,maximumFractionDigits:dec});
-}
-
-function setProgress(id, pct) {
-  const bar = document.getElementById(id+'-prog');
-  const fill = document.getElementById(id+'-bar');
+function fmt(n,dec=2){ if(n==null) return '—'; return Number(n).toLocaleString('he-IL',{minimumFractionDigits:dec,maximumFractionDigits:dec}); }
+function setProgress(id,pct){
+  const bar=document.getElementById(id+'-prog'),fill=document.getElementById(id+'-bar');
   if(pct===null){bar.classList.remove('visible');fill.style.width='0';return;}
-  bar.classList.add('visible');
-  fill.style.width = pct+'%';
+  bar.classList.add('visible');fill.style.width=pct+'%';
 }
-
-function showError(id, msg) {
-  const el = document.getElementById(id+'-err');
-  if(!msg){el.classList.remove('visible');return;}
-  el.textContent='שגיאה: '+msg;el.classList.add('visible');
+function showError(id,msg){
+  const el=document.getElementById(id+'-err');
+  if(!msg){el.classList.remove('visible');return;} el.textContent='שגיאה: '+msg;el.classList.add('visible');
 }
-
-function showPane(id) {
-  document.getElementById('empty-state').style.display = 'none';
-  ['calc-result','acc-result'].forEach(p => {
-    document.getElementById(p).classList.toggle('result-hidden', p !== id);
-    document.getElementById(p).style.display = (p===id)?'block':'none';
-  });
+// Turn a failed fetch Response into a precise, Hebrew, actionable message — so a
+// large-file rejection or a server timeout isn't hidden behind a generic error.
+async function describeHttpError(r,file){
+  const mb=file?(file.size/1048576):0;
+  let detail='';
+  try{ const t=(await r.text()).trim();
+       try{ detail=JSON.parse(t).detail||''; }catch{ detail=t.slice(0,200); } }catch{}
+  if(r.status===413 || (r.status===0 && mb>4))
+    return `הקובץ גדול מדי לשרת (${mb.toFixed(1)}MB). פלטפורמות serverless (כמו Vercel) חוסמות העלאות מעל ~4.5MB. פצל את הקובץ או הרץ את השרת ב-Render/מקומית.`;
+  if(r.status===504 || r.status===408)
+    return `העיבוד ארך זמן רב מדי (פסק זמן). נסה קובץ קטן יותר או הגדל את ה-timeout בשרת.`;
+  if(r.status===502 || r.status===503)
+    return `השרת אינו זמין כרגע (${r.status}). ייתכן שנגמר לו הזיכרון על קובץ גדול — נסה שוב או הרץ מקומית.`;
+  return `שגיאה בעיבוד הקובץ (סטטוס ${r.status})${detail?': '+detail:''}`;
 }
+const CHECK='<svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7"/></svg>';
+const CROSS='<svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+const INFO='<svg viewBox="0 0 24 24" fill="none"><path d="M12 8h.01M11 12h1v4h1"/><circle cx="12" cy="12" r="9"/></svg>';
+const STATUS_MAP={
+  valid:       {cls:'valid',  icon:CHECK, label:'תלוש תקין',          sub:'השכר המחושב תואם את התלוש (הפרש ≤ ₪1).'},
+  invalid:     {cls:'invalid',icon:CROSS, label:'תלוש שגוי',          sub:'נמצא הפרש בין החישוב לתלוש — דורש בדיקה.'},
+  no_base:     {cls:'info',   icon:INFO,  label:'ללא שכר בסיס פעיל',  sub:'אין רכיב בסיס פעיל בתלוש (ככל הנראה גמלאי/לא-פעיל).'},
+  multi_period:{cls:'info',   icon:INFO,  label:'רטרו / רב-תקופתי',   sub:'התלוש כולל יותר מתקופת שכר אחת — אינו ניתן לאימות חד-תקופתי.'},
+};
 
-async function runCalc() {
-  const btn = document.getElementById('calc-btn');
-  showError('calc','');
-  setProgress('calc',20);
-  btn.disabled=true; btn.textContent='מחשב...';
-
-  const payload = {
-    worker_id: parseInt(document.getElementById('f-worker').value)||0,
-    ministry_code: parseInt(document.getElementById('f-ministry-code').value)||0,
-    ministry_name: document.getElementById('f-ministry-name').value,
-    droog: parseInt(document.getElementById('f-droog').value)||1,
-    job_pct: parseFloat(document.getElementById('f-job-pct').value)||1,
-    pension_pct: parseFloat(document.getElementById('f-pension-pct').value)||0,
-    kod_darga: parseInt(document.getElementById('f-kod-darga').value)||0,
-    darga_label: document.getElementById('f-darga-label').value,
-    vatek_mandatory: parseFloat(document.getElementById('f-vatek-mandatory').value)||0,
-    vatek_regular: parseFloat(document.getElementById('f-vatek-regular').value)||0,
-    vatek_msc: parseFloat(document.getElementById('f-vatek-msc').value)||0,
-    vatek_calculated: parseFloat(document.getElementById('f-vatek-calc').value)||0,
-    calc_month: parseInt(document.getElementById('f-calc-month').value)||228,
-    retro_month: parseInt(document.getElementById('f-retro-month').value)||0,
-    retro_count: parseInt(document.getElementById('f-retro-count').value)||1,
-    components: getComps(),
+async function runCalc(){
+  const btn=document.getElementById('calc-btn');
+  showError('calc',''); setProgress('calc',20); btn.disabled=true; btn.textContent='מחשב…';
+  const payload={
+    worker_id:parseInt(document.getElementById('f-worker').value)||0,
+    ministry_code:parseInt(document.getElementById('f-ministry-code').value)||0,
+    ministry_name:document.getElementById('f-ministry-name').value,
+    droog:resolveTrack(document.getElementById('f-droog').value),
+    job_pct:parseFloat(document.getElementById('f-job-pct').value)||1,
+    pension_pct:0,
+    kod_darga:0,
+    darga_label:document.getElementById('f-darga-label').value,
+    vatek_mandatory:0,vatek_regular:0,vatek_msc:0,
+    vatek_calculated:parseFloat(document.getElementById('f-vatek-calc').value)||0,
+    calc_month:228,retro_month:0,retro_count:1,
+    components:getComps(),
   };
-
-  try {
+  try{
     setProgress('calc',60);
-    const r = await fetch(API+'/api/calculate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const r=await fetch(API+'/api/calculate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     setProgress('calc',100);
     if(!r.ok){const e=await r.json();throw new Error(e.detail||'שגיאת שרת');}
-    const data = await r.json();
-    renderCalcResult(data);
-  } catch(e) {
-    showError('calc', e.message);
-  } finally {
-    setTimeout(()=>setProgress('calc',null),500);
-    btn.disabled=false; btn.textContent='חשב שכר';
-  }
+    renderCalcResult(await r.json());
+  }catch(e){ showError('calc',e.message); }
+  finally{ setTimeout(()=>setProgress('calc',null),500); btn.disabled=false; btn.textContent='חשב שכר'; }
 }
 
-function renderCalcResult(d) {
-  showPane('calc-result');
-  document.getElementById('r-total').textContent = fmt(d.total);
+function renderCalcResult(d){
+  document.getElementById('calc-result').style.display='block';
+  document.getElementById('r-total').textContent='₪'+fmt(d.total);
+  document.getElementById('r-expected').textContent=d.expected_total!=null?'₪'+fmt(d.expected_total):'—';
+  document.getElementById('r-comp-count').textContent=d.components.length+' רכיבים';
 
-  const diff = d.total_diff;
-  document.getElementById('r-expected').textContent = d.expected_total!=null ? '₪'+fmt(d.expected_total) : '—';
+  const diffEl=document.getElementById('r-diff'), diff=d.total_diff;
+  if(diff!=null){ diffEl.textContent=(diff>=0?'+':'')+fmt(diff);
+    diffEl.style.color=Math.abs(diff)<=1?'var(--green)':Math.abs(diff)<10?'var(--amber)':'var(--red)'; }
 
-  const diffEl = document.getElementById('r-diff');
-  if(diff!=null){
-    diffEl.textContent = (diff>=0?'+':'')+fmt(diff);
-    diffEl.style.color = Math.abs(diff)<=1 ? 'var(--green)' : Math.abs(diff)<10 ? 'var(--amber)' : 'var(--red)';
+  const st=STATUS_MAP[d.status]||STATUS_MAP.invalid, v=document.getElementById('r-verdict');
+  v.className='verdict '+st.cls;
+  document.getElementById('r-vicon').innerHTML=st.icon;
+  document.getElementById('r-match').textContent=st.label;
+  document.getElementById('r-verdict-sub').textContent=
+    (d.status==='invalid'&&d.errors&&d.errors.length)? d.errors[0] : st.sub;
+
+  document.getElementById('m-grade').textContent=d.darga_label||'—';
+  document.getElementById('m-base').textContent=d.grade_base!=null?'₪'+fmt(d.grade_base):'—';
+  document.getElementById('m-vatek').textContent=(d.vatek_calculated!=null?d.vatek_calculated:d.vatek)!=null?(d.vatek_calculated!=null?d.vatek_calculated:d.vatek)+' שנים':'—';
+  document.getElementById('m-mult').textContent=(d.vatek_multiplier!=null?d.vatek_multiplier:d.vatek_mult)!=null?Number(d.vatek_multiplier!=null?d.vatek_multiplier:d.vatek_mult).toFixed(6):'—';
+
+  // Worker identity strip (only for file-loaded slips).
+  const wEl=document.getElementById('r-worker');
+  if(d._worker){
+    const w=d._worker;
+    wEl.style.display='flex';
+    wEl.innerHTML=[['מספר עובד',w.id],['משרד / גוף',w.ministry||'—'],['מסלול',w.track||'—'],
+      ['חלקיות',w.job_pct!=null?w.job_pct:'—'],['חודש שכר',w.month||'—']]
+      .map(([k,v])=>`<div class="wi"><b>${v}</b><span>${k}</span></div>`).join('');
+    document.getElementById('r-title').textContent='תלוש עובד '+w.id;
+  } else { wEl.style.display='none'; document.getElementById('r-title').textContent='תוצאת חישוב'; }
+
+  // Diagnosis (findings) — same content as the דוח שגויים.
+  const fEl=document.getElementById('r-findings'); fEl.innerHTML='';
+  const findings=d.findings||[];
+  if(findings.length){
+    fEl.innerHTML='<div class="finding-h">אבחון</div>'+findings.map(f=>{
+      const warn=['ללא שכר בסיס פעיל','רטרו / רב-תקופתי','תלוש ריק'].includes(f.category);
+      const nums=(f.slip!=null&&f.expected!=null)?` · בתלוש ₪${fmt(f.slip)} · תקני ₪${fmt(f.expected)} · הפרש ${f.diff>=0?'+':''}${fmt(f.diff)}`:'';
+      return `<div class="finding ${warn?'warn':''}"><span class="fc">${f.category}</span><span>${f.note||''}${nums}</span></div>`;
+    }).join('');
   }
 
-  const matchEl = document.getElementById('r-match');
-  if(d.total_match!=null){
-    matchEl.textContent = d.total_match ? '✓ מותאם' : '✗ לא מותאם';
-    matchEl.style.color = d.total_match ? 'var(--green)' : 'var(--red)';
-  }
-
-  document.getElementById('m-grade').textContent = d.darga_label || '—';
-  document.getElementById('m-base').textContent = d.grade_base!=null ? '₪'+fmt(d.grade_base) : '—';
-  document.getElementById('m-vatek').textContent = d.vatek_calculated!=null ? d.vatek_calculated+' שנים' : '—';
-  document.getElementById('m-mult').textContent = d.vatek_multiplier!=null ? Number(d.vatek_multiplier).toFixed(6) : '—';
-
-  const tbody = document.getElementById('comp-tbody');
-  tbody.innerHTML = '';
-  document.getElementById('r-comp-count').textContent = d.components.length+' רכיבים';
-
-  d.components.forEach(c => {
-    const tr = document.createElement('tr');
-    let diffHtml = '<span class="c-muted">—</span>';
-    if(c.diff!=null){
-      const cls = Math.abs(c.diff)<=1 ? 'c-green' : Math.abs(c.diff)<10 ? 'c-amber' : 'c-red';
-      diffHtml = `<span class="${cls}">${c.diff>=0?'+':''}${fmt(c.diff)}</span>`;
+  // Per-component table: בתלוש vs תקני (computed base / rulebook) + gap.
+  const pm={}; if(d.comp_flags) for(const k in d.comp_flags) pm[+k]=d.comp_flags[k].expected;
+  const tbody=document.getElementById('comp-tbody'); tbody.innerHTML='';
+  d.components.forEach(c=>{
+    const slip=c.expected!=null?c.expected:c.amount;
+    const proper=c.calculated?c.amount:(pm[c.code]!=null?pm[c.code]:null);
+    const diff=proper!=null?proper-slip:null;
+    let diffHtml='<span class="c-muted">—</span>', properHtml='<span class="c-muted">—</span>';
+    if(proper!=null){
+      properHtml=`₪${fmt(proper)}`;
+      const cls=Math.abs(diff)<=1?'c-green':Math.abs(diff)<10?'c-amber':'c-red';
+      diffHtml=`<span class="${cls}">${diff>=0?'+':''}${fmt(diff)}</span>`;
     }
-    tr.innerHTML = `
-      <td class="name-col">
-        <div>${c.name||'—'}</div>
-        <div class="code-sub">${c.code}</div>
-      </td>
-      <td>
-        <span class="badge ${c.calculated?'b-calc':'b-raw'}">${c.calculated?'מחושב':'גולמי'}</span>
-        ${c.pensionable?'<span class="badge b-pension" style="margin-right:4px">פנסיה</span>':''}
-      </td>
-      <td class="amount-col">₪${fmt(c.amount)}</td>
-      <td class="diff-col">${diffHtml}</td>`;
+    const kind=c.calculated?'בסיס':(pm[c.code]!=null?'חוקה':'גולמי');
+    const kindCls=c.calculated?'b-calc':(pm[c.code]!=null?'b-calc':'b-raw');
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td><div>${c.name||'—'}</div><div class="code-sub">${c.code}</div></td>
+      <td><span class="badge ${kindCls}">${kind}</span>${c.pensionable?'<span class="badge b-pension" style="margin-right:4px">פנסיוני</span>':''}</td>
+      <td class="amount">₪${fmt(slip)}</td><td class="amount">${properHtml}</td><td class="amount">${diffHtml}</td>`;
     tbody.appendChild(tr);
   });
-
-  const tr = document.createElement('tr');
-  tr.className = 'total-row';
-  tr.innerHTML = `<td colspan="2" style="color:var(--muted);font-size:13px">סה"כ</td>
-    <td class="amount-col" style="color:var(--accent)">₪${fmt(d.total)}</td><td></td>`;
+  const slipTotal=d.expected_total!=null?d.expected_total:d.total;
+  const tr=document.createElement('tr'); tr.className='total-row';
+  tr.innerHTML=`<td colspan="2">סה"כ</td><td class="amount">₪${fmt(slipTotal)}</td><td class="amount">₪${fmt(d.total)}</td><td></td>`;
   tbody.appendChild(tr);
 }
 
-async function runAccuracy(input) {
-  const file = input.files[0];
-  if(!file) return;
-  document.getElementById('acc-filename').textContent = file.name;
-  document.getElementById('acc-filename').style.display = 'block';
-  showError('acc','');
-  setProgress('acc',15);
-
-  try {
-    const form = new FormData();
-    form.append('file', file);
-    setProgress('acc',40);
-    const r = await fetch(API+'/api/accuracy',{method:'POST',body:form});
-    setProgress('acc',90);
-    if(!r.ok) throw new Error('שגיאה בעיבוד הקובץ');
-    const d = await r.json();
-    setProgress('acc',100);
-    renderAccuracy(d);
-  } catch(e) {
-    showError('acc',e.message);
-  } finally {
-    setTimeout(()=>setProgress('acc',null),500);
-  }
+// ---- Worker lookup from an uploaded month sheet -----------------------------
+let _wlById=null,_wlMonth=null;
+async function onWorkerFile(input){
+  const file=input.files[0]; if(!file) return;
+  showError('wl',''); const meta=document.getElementById('wl-file-meta');
+  meta.textContent='טוען…';
+  try{
+    const lk=await ensureLookups();
+    const rows=await readGolmiRows(file);
+    // Pay month: first Date value found in the sheet (the 'תאריך שכר' column).
+    _wlMonth=null;
+    for(const row of rows.slice(0,60)){ for(const v of (row||[])){ if(v instanceof Date){
+      _wlMonth=('0'+(v.getMonth()+1)).slice(-2)+'/'+v.getFullYear(); break; } } if(_wlMonth) break; }
+    const results=SalaryEngine.runEngine(lk,SalaryEngine.loadGolmi(rows),_engineRules);
+    _wlById=new Map(results.map(r=>[String(r.worker_id),r]));
+    const dl=document.getElementById('wl-id-list');
+    dl.innerHTML=results.slice(0,3000).map(r=>`<option value="${r.worker_id}">`).join('');
+    const inp=document.getElementById('wl-id'); inp.disabled=false; inp.placeholder='הקלד/בחר מספר עובד…';
+    document.getElementById('wl-btn').disabled=false;
+    const inv=results.filter(r=>r.status==='invalid').length;
+    meta.innerHTML=`נטענו <b>${results.length.toLocaleString()}</b> עובדים · ${inv.toLocaleString()} שגויים · ${file.name}`;
+  }catch(e){ meta.textContent=''; showError('wl',e.message||String(e)); }
+}
+function showWorkerFromFile(){
+  showError('wl','');
+  if(!_wlById){ showError('wl','יש לבחור קובץ תחילה.'); return; }
+  const id=String(document.getElementById('wl-id').value||'').trim();
+  const r=_wlById.get(id);
+  if(!r){ showError('wl',`עובד ${id} לא נמצא בקובץ.`); return; }
+  const TRACK={1:'מינהלי',2:'עובדי מנהל ושירותים',11:'מח"ר'};
+  const view=Object.assign({},r,{_worker:{id:r.worker_id,ministry:r.ministry_name,
+    track:TRACK[r.droog]||('דירוג '+r.droog),job_pct:r.job_pct,month:_wlMonth||null}});
+  renderCalcResult(view);
+  document.getElementById('calc-result').scrollIntoView({behavior:'smooth',block:'start'});
 }
 
-function renderAccuracy(d) {
-  showPane('acc-result');
+// ---- Client-side processing -------------------------------------------------
+// The גולמי file is parsed and validated entirely in the browser (SheetJS reads
+// it, engine.js runs the same logic as the server). Nothing is uploaded, so any
+// file size works — no serverless request-body limit, no timeout.
+let _engineLookups=null,_engineRules=null;
+async function ensureLookups(){
+  if(_engineLookups) return _engineLookups;
+  const [rl,rr]=await Promise.all([fetch(API+'/api/lookups'),fetch(API+'/api/rules')]);
+  if(!rl.ok) throw new Error('טעינת טבלאות השכר נכשלה (סטטוס '+rl.status+')');
+  _engineLookups=SalaryEngine.prepLookups(await rl.json());
+  _engineRules=rr.ok?SalaryEngine.prepRules(await rr.json()):null; // rules are optional
+  return _engineLookups;
+}
 
-  const pct = d.accuracy_pct;
-  const color = pct>=90?'var(--green)':pct>=70?'var(--amber)':'var(--red)';
-  document.getElementById('a-pct').textContent = pct.toFixed(1)+'%';
-  document.getElementById('a-pct').style.color = color;
-  document.getElementById('a-sub').textContent = `${d.matched.toLocaleString()} מתוך ${d.total_workers.toLocaleString()} עובדים מותאמים`;
-  document.getElementById('a-bar').style.width = pct+'%';
-  document.getElementById('a-bar').style.background = color;
+// ---- עדכון חוברת Progim מהאתר --------------------------------------------
+async function refreshProgimStatus(){
+  const el=document.getElementById('progim-src'); if(!el) return;
+  try{
+    const s=await (await fetch(API+'/api/progim/status')).json();
+    el.textContent=`מקור: ${s.source==='uploaded'?'הועלה':'ברירת מחדל'} · ${s.rules} כללים`;
+    const btn=document.getElementById('progim-up-btn');
+    if(!s.upload_enabled){ btn.disabled=true;
+      document.getElementById('progim-result').innerHTML='<span style="color:var(--amber)">העלאה מושבתת — יש להגדיר ADMIN_TOKEN בשרת.</span>'; }
+  }catch{ el.textContent=''; }
+}
+async function uploadProgim(){
+  const fi=document.getElementById('progim-file'), tk=document.getElementById('progim-token');
+  const out=document.getElementById('progim-result'), btn=document.getElementById('progim-up-btn');
+  if(!fi.files||!fi.files[0]){ out.innerHTML='<span style="color:var(--red)">יש לבחור קובץ Progim.</span>'; return; }
+  const fd=new FormData(); fd.append('file',fi.files[0]); fd.append('token',tk.value||'');
+  btn.disabled=true; out.innerHTML='מעבד את החוברת…';
+  try{
+    const r=await fetch(API+'/api/progim/upload',{method:'POST',body:fd});
+    const j=await r.json();
+    if(!r.ok){ out.innerHTML=`<span style="color:var(--red)">שגיאה: ${j.detail||r.status}</span>`; btn.disabled=false; return; }
+    const ch=(j.summary.base_changes||[]);
+    const chTxt=ch.length? ch.map(c=>`${c.code}: +[${c.added.join(', ')}]`).join(' · ') : 'ללא שינויי בסיס (זהה למכויל)';
+    out.innerHTML=`<div style="color:var(--green);font-weight:600">✓ עודכן: ${j.filename}</div>`+
+      `<div style="margin-top:4px">${j.summary.grades} דרגות · ${j.summary.rules} כללים · שינויי בסיס: ${chTxt}</div>`+
+      `<div style="margin-top:4px;color:var(--muted,#6b7280)">${j.note||''}</div>`;
+    _engineLookups=null; _engineRules=null;   // next run re-fetches the new data
+    await ensureLookups();
+    refreshProgimStatus();
+  }catch(e){ out.innerHTML=`<span style="color:var(--red)">שגיאת רשת: ${e.message||e}</span>`; }
+  btn.disabled=false;
+}
+async function readGolmiRows(file){
+  if(typeof XLSX==='undefined') throw new Error('ספריית קריאת האקסל לא נטענה — בדוק את חיבור האינטרנט.');
+  const buf=await file.arrayBuffer();
+  let wb;
+  try{
+    wb=XLSX.read(new Uint8Array(buf),{type:'array',cellDates:true});
+  }catch(e){
+    // Turn the library's cryptic reason into an actionable Hebrew one.
+    const m=String(e&&e.message||e);
+    if(/password/i.test(m)) throw new Error('הקובץ מוגן בסיסמה — פתח באקסל, הסר את ההגנה ושמור מחדש כ-xlsx');
+    if(/zip|Unsupported|CFB|corrupt/i.test(m)) throw new Error('פורמט לא נתמך (כנראה xls ישן) — פתח באקסל ושמור מחדש כ-‎.xlsx');
+    throw new Error('לא ניתן לקרוא את הקובץ ('+m.slice(0,60)+')');
+  }
+  const sn=wb.SheetNames.indexOf('גולמי')>=0?'גולמי':wb.SheetNames[0];
+  return XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:null});
+}
+// Pay-month label: the first Date cell in the sheet (the 'תאריך שכר' column),
+// else an MM/YYYY or MM.YYYY pattern in the file name, else the file name.
+function payMonthLabel(rows,fileName){
+  for(let i=0;i<Math.min(rows.length,12);i++){
+    for(const c of (rows[i]||[])){
+      if(c instanceof Date && !isNaN(c)) return String(c.getMonth()+1).padStart(2,'0')+'/'+c.getFullYear();
+    }
+  }
+  const nm=(fileName||'').replace(/\.(xlsx|xls)$/i,'');
+  const m=nm.match(/(0?[1-9]|1[0-2])[._/](20\d{2})/) || nm.match(/(20\d{2})[._/](0?[1-9]|1[0-2])/);
+  if(m){ const a=+m[1],b=+m[2]; const mm=a>12?b:a, yy=a>12?a:b; return String(mm).padStart(2,'0')+'/'+yy; }
+  return nm;
+}
+async function processFileLocally(file){
+  const lk=await ensureLookups();
+  const t0=performance.now();
+  const rows=await readGolmiRows(file);
+  const results=SalaryEngine.runEngine(lk,SalaryEngine.loadGolmi(rows),_engineRules);
+  return {results, elapsed:Math.round((performance.now()-t0)/100)/10};
+}
+function downloadBlob(blob,name){
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+function dateStamp(){ return new Date().toISOString().slice(0,10); } // YYYY-MM-DD
 
-  document.getElementById('a-total').textContent = d.total_workers.toLocaleString();
-  document.getElementById('a-matched').textContent = d.matched.toLocaleString();
-  document.getElementById('a-unmatched').textContent = d.unmatched.toLocaleString();
-  document.getElementById('a-avg').textContent = '₪'+fmt(d.avg_diff);
-  document.getElementById('a-max').textContent = '₪'+fmt(d.max_diff);
-  document.getElementById('a-time').textContent = d.elapsed_sec+'ש';
+// The last processed file's results — the downloads (highlighted גולמי /
+// valid-vs-review export) are generated from these, so one upload serves all.
+let _lastResults=null;
 
-  const tbody = document.getElementById('ministry-tbody');
-  tbody.innerHTML = '';
-  d.by_ministry.forEach(m => {
-    const pct2 = m.accuracy_pct;
-    const col = pct2>=90?'var(--green)':pct2>=70?'var(--amber)':'var(--red)';
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td class="name-col" style="font-size:13px">${m.ministry_name||'—'}</td>
-      <td style="font-family:var(--mono);font-size:13px">${m.workers}</td>
-      <td style="font-family:var(--mono);font-size:13px;color:var(--green)">${m.matched}</td>
-      <td style="font-family:var(--mono);font-size:13px;color:${col}">${pct2.toFixed(1)}%</td>
-      <td class="match-bar-cell">
-        <div class="match-bar-bg">
-          <div class="match-bar-fill" style="width:${pct2}%;background:${col}"></div>
-        </div>
-      </td>`;
+async function runAccuracy(input){
+  const files=Array.from(input.files||[]); if(!files.length) return;
+  if(files.length>1) return runBulk(files);
+  const file=files[0];
+  document.getElementById('bulk-result').style.display='none';
+  const fn=document.getElementById('acc-filename'); fn.textContent=file.name; fn.style.display='block'; fn.style.color='';
+  showError('acc',''); setProgress('acc',15);
+  const dl=document.getElementById('dl-filename'); dl.textContent=''; dl.style.display='none';
+  try{
+    setProgress('acc',40);
+    const {results,elapsed}=await processFileLocally(file); setProgress('acc',85);
+    _lastResults=results;
+    renderAccuracy(SalaryEngine.accuracyReport(results,elapsed));
+    setProgress('acc',100);
+  }catch(e){ showError('acc',e.message||String(e)); }
+  finally{ setTimeout(()=>setProgress('acc',null),500); }
+}
+
+// ---- Bulk: several files → one unified workbook -----------------------------
+let _bulkData=null;   // {perFile:[{name,month,workers,valid,invalid,no_base,multi,acc}], perEmp:[...]}
+const BULK_STATUS_HE={valid:'תקין',invalid:'שגוי',no_base:'ללא שכר בסיס פעיל',multi_period:'רטרו / רב-תקופתי'};
+// Why the software's verdict differs from a plain current-Progim run.
+function progimDelta(r, rawFirst, rules){
+  const notes=[]; const amt=new Map();
+  for(const c of r.components) amt.set(c.code,(amt.get(c.code)||0)+(c.expected||0));
+  const rawVatek=parseFloat(rawFirst&&rawFirst.vatek)||0;
+  if(Math.abs((r.vatek||0)-rawVatek)>1e-9)
+    notes.push(`ותק קטוע בקובץ: ${rawVatek} תוקן ל-${r.vatek} (ה-Progim מניח ותק מדויק; הקובץ חותך לשתי ספרות)`);
+  const rawDarga=String((rawFirst&&rawFirst.darga_label)||'').trim();
+  // A bare '+' reposition ('+18'→'18+') is NOT a difference — the Progim
+  // resolves both spellings, so stay silent. Only note a genuine
+  // reinterpretation: a קוד-דרגה promoted to its '+' grade by the file's own
+  // vote (labels still differ after normalization).
+  if(rawDarga && r.darga_label && rawDarga!==String(r.darga_label)
+     && SalaryEngine.normalizeGradeLabel(rawDarga)!==SalaryEngine.normalizeGradeLabel(r.darga_label))
+    notes.push(`דרגה פורשה כ-'${r.darga_label}' במקום '${rawDarga}' (קוד-דרגה קודם לדרגת ה-'+' לפי הצבעת התלושים בקובץ)`);
+  if(r.status==='valid'){
+    let bs=0,bc=0;
+    for(const c of r.components){ if(c.code===1||c.code===2||c.code===10002) bs+=(c.expected||0); if(c.calculated) bc+=(c.amount||0);}
+    if(bc && Math.abs(bc-bs)>1) notes.push(`הבסיס אושר דרך חלון עיגול הוותק (±0.125 שנה) — חישוב נקודתי כמו ב-Progim היה מראה פער ${SalaryEngine.round2(bc-bs)} ₪`);
+  }
+  // NOTE: a component paid at an earlier official phase-in rate is NOT listed
+  // here — the Progim resolves the rate by חודש פרישה from its own pulse
+  // tables (heskem 2016/2023, tos kibutzi, MANMASH 2010), so a period rate is
+  // not a difference between the software and the workbook.
+  return notes.join('; ');
+}
+
+// Short Hebrew "why" for a gap on a given pay code — for the exec-summary
+// per-code breakdown. Derives from the rule type, with base + gmul special-cased.
+function gapReason(code, rules){
+  if(code==='בסיס') return 'שכר הבסיס אינו תואם — שינוי ותק/דרגה או חודש חלקי';
+  if(code===667||code===897) return 'חריגה מהערך התקני לקבוצת הדרגה (חשד להפרשי רטרו)';
+  const rule=rules&&rules[code];
+  const t=rule&&rule.type;
+  if(t==='shekel') return 'סכום קבוע מחוץ לטבלת הערכים הרשמית';
+  if(t==='max22') return 'חריגה מנוסחת 4550 (הגבוה מבין 22% למינימום)';
+  if(t==='percent') return 'האחוז או בסיס-החישוב אינם תואמים את החוקה';
+  if(code===5402||code===5524) return 'סכום שקלי החורג מנורמת קבוצת הדרגה בקובץ';
+  return 'סטייה מהערך התקני של הרכיב';
+}
+
+async function runBulk(files){
+  document.getElementById('acc-result').style.display='none';
+  const fn=document.getElementById('acc-filename');
+  fn.textContent=`${files.length} קבצים נבחרו`; fn.style.display='block'; fn.style.color='';
+  showError('acc',''); setProgress('acc',5);
+  const bd=document.getElementById('bulk-dl-filename'); bd.textContent=''; bd.style.display='none';
+  const t0=performance.now();
+  const pureMode=!!document.getElementById('pure-toggle')?.checked;
+  const perFile=[], perEmp=[], failed=[];
+  const codeGaps=new Map();   // code -> {name, count, sum₪}, accumulated across files
+  const recAcc=new Map();     // "Progim בלבד": aggregated recommendations across files
+  try{
+    await ensureLookups();
+    for(let i=0;i<files.length;i++){
+      const f=files[i];
+      // Each file is isolated: one unreadable file (stale handle, non-xlsx,
+      // wrong sheet) is skipped and reported — it never aborts the whole batch.
+      try{
+        const rows=await readGolmiRows(f);
+        const month=payMonthLabel(rows,f.name);
+        const workers=SalaryEngine.loadGolmi(rows);
+        const rawFirsts=[...workers.values()].map(rr=>rr[0]);
+        const results=SalaryEngine.runEngine(_engineLookups,workers,_engineRules,pureMode);
+        if(!results.length) throw new Error('לא נמצאו עובדים בגיליון');
+        if(pureMode){
+          // Diff against the smart run so every gap the add-ons would clear
+          // becomes a Progim recommendation (never patched into the engine).
+          const smart=SalaryEngine.runEngine(_engineLookups,workers,_engineRules,false);
+          for(const rec of SalaryEngine.buildProgimRecommendations(results,smart,_engineRules)){
+            const key=rec.category+'|'+rec.code;
+            const a=recAcc.get(key);
+            if(!a) recAcc.set(key,{...rec});
+            else { a.count+=rec.count; a.sum=SalaryEngine.round2(a.sum+rec.sum); }
+          }
+        }
+        let v=0,inv=0,nb=0,mp=0;
+        const fileStart=perEmp.length;
+        for(let ri=0;ri<results.length;ri++){
+          const r=results[ri];
+          if(r.status==='valid')v++; else if(r.status==='invalid')inv++;
+          else if(r.status==='no_base')nb++; else if(r.status==='multi_period')mp++;
+          let baseSlip=0,baseCalc=0;
+          for(const c of r.components){
+            if(c.code===1||c.code===2||c.code===10002) baseSlip+=(c.expected||0);
+            if(c.calculated) baseCalc+=(c.amount||0);
+          }
+          const gf=r.comp_flags||{};
+          const flags=Object.keys(gf).map(k=>`${k} (${gf[k].name}): ${gf[k].slip} במקום ${gf[k].expected}`).join('; ');
+          // r.total/r.total_diff already fold in every flagged component's
+          // correction (done by the engine) — use them directly (no double count).
+          const totalCalc=SalaryEngine.round2(r.total);
+          const totalDiff=SalaryEngine.round2(r.total_diff||0);
+          const baseDiff=baseCalc?SalaryEngine.round2(baseCalc-baseSlip):null;
+          // Component gaps beside the base gap: גמול א'(667), ב'(897), דריכות בי"ח(798).
+          const gap=(c)=>gf[c]?SalaryEngine.round2(gf[c].slip-gf[c].expected):null;
+          const diag=(r.findings||[]).map(x=>x.category+(x.note?' — '+x.note:'')).join('; ');
+          const delta=progimDelta(r,rawFirsts[ri],_engineRules);
+          const fullTime=(r.job_pct||1)>=0.999;
+          // One bucket per invalid full-timer: ותק סטודנט (5527) > base > gmul >
+          // דריכות > גמול מנהל > אמיתי (no double-count). Student vetek makes the
+          // regular-vetek base recompute expectedly off — a known cause, first.
+          const hasStudent=(r.components||[]).some(c=>c.code===5527&&(c.amount||0)!==0);
+          let errCat=null;
+          if(r.status==='invalid'){
+            if(hasStudent) errCat='student';
+            else if(baseDiff!==null && Math.abs(baseDiff)>1) errCat='base';
+            else if(gf[667]||gf[897]) errCat='gmul';
+            else if(gf[798]) errCat='brich';
+            else if(gf[4983]) errCat='mnhal';
+            else errCat='real';
+            // Per-code gap tally for the exec summary: the base (when off) plus
+            // every flagged component, each with its ₪ magnitude.
+            const bump=(code,name,amt)=>{
+              const g=codeGaps.get(code)||{name,count:0,sum:0};
+              g.count++; g.sum+=Math.abs(amt||0); if(name)g.name=name; codeGaps.set(code,g);
+            };
+            if(baseDiff!==null && Math.abs(baseDiff)>1) bump('בסיס','שכר בסיס',baseDiff);
+            for(const k in gf) bump(Number(k), gf[k].name, gf[k].slip-gf[k].expected);
+          }
+          perEmp.push([month, f.name.replace(/\.xlsx$/i,''), r.worker_id, r.ministry_name,
+            r.darga_label, r.vatek, r.job_pct,
+            SalaryEngine.round2(baseSlip), baseCalc?SalaryEngine.round2(baseCalc):null, baseDiff,
+            gap(667), gap(897), gap(798), gap(4983),
+            r.expected_total, totalCalc, totalDiff, BULK_STATUS_HE[r.status]||r.status, flags, diag, delta,
+            r.status, fullTime, errCat]);
+        }
+        const active=v+inv;
+        // Full-time neutralization breakdown for the dashboard (buckets dedup'd).
+        const fr=perEmp.slice(fileStart);
+        const ft=fr.filter(x=>x[FT_IDX]);
+        const cnt=(cat)=>ft.filter(x=>x[STATUS_RAW_IDX]==='invalid'&&x[ERRCAT_IDX]===cat).length;
+        const ftValid=ft.filter(x=>x[STATUS_RAW_IDX]==='valid').length;
+        const invStudent=cnt('student'),invBase=cnt('base'),invGmul=cnt('gmul'),invBrich=cnt('brich'),invMnhal=cnt('mnhal'),invReal=cnt('real');
+        const ftAct=ftValid+invStudent+invBase+invGmul+invBrich+invMnhal+invReal;
+        perFile.push({name:f.name.replace(/\.xlsx$/i,''), month, workers:results.length,
+          valid:v, invalid:inv, no_base:nb, multi:mp, acc:active?SalaryEngine.round2(v/active*100):0,
+          part_time:fr.length-ft.length, ft:ft.length, ft_valid:ftValid,
+          inv_student:invStudent, inv_base:invBase, inv_gmul:invGmul, inv_brich:invBrich, inv_mnhal:invMnhal, inv_real:invReal,
+          real_pct:ftAct?SalaryEngine.round2(invReal/ftAct*100):0});
+      }catch(fe){
+        failed.push({name:f.name, msg:fe.message||String(fe)});
+      }
+      setProgress('acc',5+Math.round((i+1)/files.length*85));
+    }
+    if(!perFile.length) throw new Error(`אף קובץ לא נקרא בהצלחה (${failed.length} נכשלו). ` + (failed[0]?`הראשון: ${failed[0].msg}`:''));
+    const codeGapList=[...codeGaps.entries()]
+      .map(([code,g])=>({code, name:g.name, count:g.count, sum:SalaryEngine.round2(g.sum),
+                         reason:gapReason(code,_engineRules)}))
+      .sort((a,b)=>b.count-a.count);
+    const recs=[...recAcc.values()].sort((a,b)=>b.count-a.count);
+    _bulkData={perFile,perEmp,codeGaps:codeGapList,recs,pure:pureMode};
+    renderBulk(perFile, Math.round((performance.now()-t0)/100)/10);
+    if(failed.length){
+      const names=failed.slice(0,6).map(x=>x.name).join(', ')+(failed.length>6?'…':'');
+      showError('acc',`${failed.length} קבצים דולגו (לא נקראו): ${names}. השאר עובדו — ${perFile.length} קבצים בקובץ האחוד.`);
+    }
+    setProgress('acc',100);
+  }catch(e){ showError('acc',e.message||String(e)); }
+  finally{ setTimeout(()=>setProgress('acc',null),600); }
+}
+
+// ₪ magnitude of a bulk per-employee row's anomaly: the larger of the base gap
+// (idx 9) and the corrected-total gap (idx 14, which already folds in every
+// component correction incl. גמול), so a component-only mismatch still ranks.
+const R_STATUS=21, STATUS_RAW_IDX=21, FT_IDX=22, ERRCAT_IDX=23;
+function rowAnomaly(r){ return Math.max(Math.abs(r[9]||0), Math.abs(r[16]||0)); }
+// Sum of anomaly ₪ per file key (month+name), computed from perEmp rows.
+function anomalySums(perEmp){
+  const by=new Map(); let total=0;
+  for(const r of perEmp){ if(r[R_STATUS]!=='invalid') continue;
+    const v=rowAnomaly(r); total+=v;
+    const k=r[0]+'|'+r[1]; by.set(k,(by.get(k)||0)+v); }
+  return {by,total};
+}
+
+function renderBulk(perFile, elapsed){
+  document.getElementById('bulk-result').style.display='block';
+  document.getElementById('bulk-time').textContent=elapsed+' ש׳';
+  const sums=anomalySums(_bulkData.perEmp);
+  const tb=document.getElementById('bulk-tbody'); tb.innerHTML='';
+  const tot={workers:0,valid:0,invalid:0};
+  perFile.forEach(s=>{
+    tot.workers+=s.workers; tot.valid+=s.valid; tot.invalid+=s.invalid;
+    const col=s.acc>=99?'var(--green)':s.acc>=95?'var(--amber)':'var(--red)';
+    const anom=sums.by.get(s.month+'|'+s.name)||0;
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${s.month}<div class="code-sub">${s.name}</div></td>
+      <td class="num">${s.workers.toLocaleString()}</td>
+      <td class="num" style="color:var(--green)">${s.valid.toLocaleString()}</td>
+      <td class="num" style="color:var(--red)">${s.invalid.toLocaleString()}</td>
+      <td class="num" style="color:var(--red)">₪${fmt(anom,0)}</td>
+      <td class="num" style="color:${col};font-weight:600">${s.acc.toFixed(1)}%</td>`;
+    tb.appendChild(tr);
+  });
+  const active=tot.valid+tot.invalid;
+  const tr=document.createElement('tr'); tr.className='total-row';
+  tr.innerHTML=`<td>סה"כ (${perFile.length} קבצים)</td>
+    <td class="num">${tot.workers.toLocaleString()}</td>
+    <td class="num">${tot.valid.toLocaleString()}</td>
+    <td class="num">${tot.invalid.toLocaleString()}</td>
+    <td class="num">₪${fmt(sums.total,0)}</td>
+    <td class="num">${active?(tot.valid/active*100).toFixed(1):0}%</td>`;
+  tb.appendChild(tr);
+  renderTrend(perFile);
+  renderFlips(_bulkData.perEmp);
+}
+
+// ---- Trend: accuracy per pay month (files of the same month are combined) ----
+function monthKey(m){ const [mm,yy]=String(m).split('/'); return (+yy)*12+(+mm||0); }
+function renderTrend(perFile){
+  const wrap=document.getElementById('bulk-trend'); wrap.innerHTML='';
+  const byMonth=new Map();
+  for(const s of perFile){
+    if(!byMonth.has(s.month)) byMonth.set(s.month,{v:0,i:0});
+    const o=byMonth.get(s.month); o.v+=s.valid; o.i+=s.invalid;
+  }
+  const pts=[...byMonth.entries()].map(([m,o])=>({m,acc:o.v+o.i?o.v/(o.v+o.i)*100:0}))
+    .sort((a,b)=>monthKey(a.m)-monthKey(b.m));
+  if(pts.length<2) return;                       // a trend needs at least two months
+  const W=Math.max(420,pts.length*74+94), H=190, L=44, R=38, T=18, B=34;
+  const lo=Math.max(0,Math.floor(Math.min(...pts.map(p=>p.acc))-1)), hi=100;
+  const x=i=>L+(W-L-R)*(pts.length===1?0.5:i/(pts.length-1));
+  const y=v=>T+(H-T-B)*(1-(v-lo)/(hi-lo));
+  let g='';
+  for(let t=lo;t<=hi;t+=(hi-lo>6?2:1)){
+    g+=`<line x1="${L}" x2="${W-R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--border)" stroke-width="1"/>`+
+       `<text x="${L-6}" y="${y(t)+3.5}" font-size="10" fill="var(--muted)" text-anchor="end">${t}%</text>`;
+  }
+  const path=pts.map((p,i)=>`${i?'L':'M'}${x(i)},${y(p.acc)}`).join('');
+  let dots='';
+  pts.forEach((p,i)=>{
+    const bad=p.acc<95;
+    dots+=`<circle cx="${x(i)}" cy="${y(p.acc)}" r="4.5" fill="${bad?'var(--red)':'#2a78d6'}" stroke="var(--surface)" stroke-width="2"/>`+
+      `<text x="${x(i)}" y="${y(p.acc)-9}" font-size="10.5" font-weight="600" fill="${bad?'var(--red)':'var(--fg)'}" text-anchor="middle">${p.acc.toFixed(1)}%</text>`+
+      `<text x="${x(i)}" y="${H-12}" font-size="10" fill="var(--muted)" text-anchor="middle">${p.m}</text>`;
+  });
+  wrap.innerHTML=`<svg class="trend-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="תקינות לפי חודש">
+    ${g}<path d="${path}" fill="none" stroke="#2a78d6" stroke-width="2"/>${dots}</svg>`;
+}
+
+// ---- Workers whose status flipped valid→invalid between months ---------------
+function computeFlips(perEmp){
+  const hist=new Map();  // worker -> [{mk, month, status, diff, ministry, darga}]
+  for(const r of perEmp){
+    const id=r[2];
+    if(!hist.has(id)) hist.set(id,[]);
+    hist.get(id).push({mk:monthKey(r[0]),month:r[0],status:r[R_STATUS],diff:rowAnomaly(r),ministry:r[3],darga:r[4]});
+  }
+  const flips=[];
+  for(const [id,rows] of hist){
+    if(rows.length<2) continue;
+    rows.sort((a,b)=>a.mk-b.mk);
+    for(let i=1;i<rows.length;i++){
+      if(rows[i-1].status==='valid'&&rows[i].status==='invalid'&&rows[i].mk!==rows[i-1].mk){
+        flips.push({id,from:rows[i-1].month,to:rows[i].month,diff:rows[i].diff,
+                    ministry:rows[i].ministry,darga:rows[i].darga});
+      }
+    }
+  }
+  return flips.sort((a,b)=>b.diff-a.diff);
+}
+function renderFlips(perEmp){
+  const wrap=document.getElementById('bulk-flips'); wrap.innerHTML='';
+  const flips=computeFlips(perEmp);
+  if(!flips.length) return;
+  const top=flips.slice(0,25);
+  wrap.innerHTML=`<h3 class="logic-h" style="margin-top:20px">עובדים שהפכו מתקין לשגוי בין חודשים (${flips.length.toLocaleString()})</h3>
+    <p class="flip-note">תלוש שהיה תקין בחודש אחד ושגוי בחודש עוקב — נקודת הבדיקה החזקה ביותר: משהו השתנה אצל העובד. מוצגים ${top.length} הגדולים לפי ₪.</p>
+    <table><thead><tr><th>מסד</th><th>משרד</th><th>דרגה</th><th>תקין ב-</th><th>שגוי ב-</th><th style="text-align:left">פער ₪</th></tr></thead>
+    <tbody>${top.map(f=>`<tr><td class="num">${f.id}</td><td>${f.ministry||'—'}</td><td>${f.darga||'—'}</td>
+      <td class="num c-green">${f.from}</td><td class="num c-red">${f.to}</td>
+      <td class="amount c-red">₪${fmt(f.diff)}</td></tr>`).join('')}</tbody></table>`;
+}
+
+// ---- Presentation mode & executive summary -----------------------------------
+function togglePresent(){ document.documentElement.classList.toggle('present'); }
+
+function printExecSummary(){
+  const ep={months:[],tops:[],codes:[],workers:0,valid:0,invalid:0,anom:0,src:''};
+  if(_bulkData){
+    const sums=anomalySums(_bulkData.perEmp);
+    for(const s of _bulkData.perFile){
+      ep.workers+=s.workers; ep.valid+=s.valid; ep.invalid+=s.invalid;
+      ep.months.push([s.month,s.workers,s.valid,s.invalid,sums.by.get(s.month+'|'+s.name)||0,s.acc]);
+    }
+    ep.anom=sums.total;
+    ep.tops=_bulkData.perEmp.filter(r=>r[R_STATUS]==='invalid')
+      .sort((a,b)=>rowAnomaly(b)-rowAnomaly(a)).slice(0,12)
+      .map(r=>[r[2],r[3],r[0],rowAnomaly(r)]);
+    ep.codes=_bulkData.codeGaps||[];
+    ep.src=`${_bulkData.perFile.length} קבצים חודשיים`;
+  }else if(_lastResults){
+    const inv=_lastResults.filter(r=>r.status==='invalid');
+    ep.workers=_lastResults.length;
+    ep.valid=_lastResults.filter(r=>r.status==='valid').length;
+    ep.invalid=inv.length;
+    ep.anom=inv.reduce((s,r)=>s+Math.abs(r.total_diff||0),0);
+    ep.months=[['—',ep.workers,ep.valid,ep.invalid,ep.anom,
+      ep.valid+ep.invalid?Math.round(ep.valid/(ep.valid+ep.invalid)*10000)/100:0]];
+    ep.tops=inv.sort((a,b)=>Math.abs(b.total_diff||0)-Math.abs(a.total_diff||0)).slice(0,12)
+      .map(r=>[r.worker_id,r.ministry_name,'—',Math.abs(r.total_diff||0)]);
+    // Per-code gaps from the single file's flagged components + base.
+    const cg=new Map();
+    for(const r of inv){
+      const bump=(code,name,amt)=>{const g=cg.get(code)||{name,count:0,sum:0};g.count++;g.sum+=Math.abs(amt||0);if(name)g.name=name;cg.set(code,g);};
+      let bs=0,bc=0; for(const c of r.components){if(c.code===1||c.code===2||c.code===10002)bs+=(c.expected||0);if(c.calculated)bc+=(c.amount||0);}
+      if(bc && Math.abs(bc-bs)>1) bump('בסיס','שכר בסיס',bc-bs);
+      const gf=r.comp_flags||{}; for(const k in gf) bump(Number(k),gf[k].name,gf[k].slip-gf[k].expected);
+    }
+    ep.codes=[...cg.entries()].map(([code,g])=>({code,name:g.name,count:g.count,sum:SalaryEngine.round2(g.sum),reason:gapReason(code,_engineRules)})).sort((a,b)=>b.count-a.count);
+    ep.src='קובץ בודד';
+  }else{ showError('acc','יש לבדוק קובץ תחילה.'); return; }
+  const active=ep.valid+ep.invalid, acc=active?ep.valid/active*100:0;
+  document.getElementById('ep-sub').textContent=
+    `${ep.src} · הופק ${new Date().toLocaleDateString('he-IL')} · העיבוד בוצע בדפדפן, ללא העלאת נתונים`;
+  document.getElementById('ep-kpis').innerHTML=[
+    ['תלושים שנבדקו',ep.workers.toLocaleString()],
+    ['תקינים',ep.valid.toLocaleString()],
+    ['שגויים — לבדיקה',ep.invalid.toLocaleString()],
+    ['% תקינות (פעילים)',acc.toFixed(2)+'%'],
+    ['שווי חריגות מוערך','₪'+fmt(ep.anom,0)],
+  ].map(([k,v])=>`<div class="ep-kpi"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+  document.getElementById('ep-months').innerHTML=
+    `<thead><tr><th>חודש</th><th>עובדים</th><th>תקין</th><th>שגוי</th><th>שווי ₪</th><th>%</th></tr></thead><tbody>`+
+    ep.months.map(m=>`<tr><td>${m[0]}</td><td class="n">${m[1].toLocaleString()}</td><td class="n">${m[2].toLocaleString()}</td>
+      <td class="n">${m[3].toLocaleString()}</td><td class="n">${fmt(m[4],0)}</td><td class="n">${Number(m[5]).toFixed(1)}%</td></tr>`).join('')+'</tbody>';
+  document.getElementById('ep-top').innerHTML=
+    `<thead><tr><th>מסד</th><th>משרד</th><th>חודש</th><th>פער ₪</th></tr></thead><tbody>`+
+    ep.tops.map(t=>`<tr><td class="n">${t[0]}</td><td>${t[1]||'—'}</td><td>${t[2]}</td><td class="n">${fmt(t[3])}</td></tr>`).join('')+'</tbody>';
+  document.getElementById('ep-codes').innerHTML=
+    `<thead><tr><th>סמל</th><th>שם רכיב</th><th>כמות פערים</th><th>שווי ₪</th><th>הסיבה לפער</th></tr></thead><tbody>`+
+    (ep.codes.length?ep.codes.map(c=>`<tr><td class="n">${c.code}</td><td>${c.name||'—'}</td>
+      <td class="n">${c.count.toLocaleString()}</td><td class="n">${fmt(c.sum,0)}</td><td>${c.reason}</td></tr>`).join('')
+      :`<tr><td colspan="5">לא נמצאו פערים</td></tr>`)+'</tbody>';
+  document.getElementById('ep-foot').textContent='סימולטור שכר · מנוע מבוסס טבלאות Progim · בדיקת התאמת תלושים';
+  window.print();
+}
+
+// ---- Live pay tables (transparency: exactly what the engine computes with) ---
+let _liveGrades=null;
+async function loadLiveTables(){
+  try{
+    const [rg,rt]=await Promise.all([fetch(API+'/api/grades'),fetch(API+'/api/tracks')]);
+    if(rg.ok){ _liveGrades=(await rg.json()).grades||[]; renderLiveGrades(); }
+    if(rt.ok){
+      const tracks=(await rt.json()).tracks||[];
+      document.getElementById('lt-tracks').innerHTML=tracks.map(t=>
+        `<tr><td class="num">${t.code}</td><td>${t.name||'—'}</td>
+         <td class="amount">${t.max_vatek?t.max_vatek+' שנים':'—'}</td></tr>`).join('');
+    }
+  }catch{}
+}
+function renderLiveGrades(){
+  if(!_liveGrades) return;
+  const q=(document.getElementById('lt-filter').value||'').trim();
+  const list=q?_liveGrades.filter(g=>String(g.darga_label).includes(q)):_liveGrades;
+  document.getElementById('lt-grades').innerHTML=list.map(g=>
+    `<tr><td>${g.darga_label}</td><td class="amount">₪${fmt(g.base_salary)}</td></tr>`).join('')
+    ||'<tr><td colspan="2" class="c-muted">אין תוצאות</td></tr>';
+}
+
+// Column spec for the employee sheets — role-driven so nothing drifts when a
+// column is added. m=money ₪, n=integer, diff=gap cell (colored by sign/size).
+const EMP_SPEC=[
+  {h:'חודש שכר',w:11}, {h:'קובץ',w:18}, {h:'מסד עובד',w:12,fmt:'n'},
+  {h:'משרד',w:22}, {h:'דרגה',w:8}, {h:'ותק',w:8}, {h:'חלקיות',w:8},
+  {h:'בסיס בתלוש',w:13,fmt:'m'}, {h:'בסיס מחושב',w:13,fmt:'m'},
+  {h:'הפרש בסיס',w:12,fmt:'m',diff:1},
+  {h:"פער גמול א'",w:12,fmt:'m',diff:1}, {h:"פער גמול ב'",w:12,fmt:'m',diff:1},
+  {h:'פער דריכות בי"ח',w:13,fmt:'m',diff:1}, {h:'פער גמול מנהל',w:12,fmt:'m',diff:1},
+  {h:'סכום בתלוש',w:13,fmt:'m'}, {h:'סכום מחושב',w:13,fmt:'m'},
+  {h:'הפרש כולל',w:12,fmt:'m',diff:1},
+  {h:'סטטוס',w:16,status:1}, {h:'רכיבים חריגים',w:30}, {h:'אבחון',w:30},
+  {h:'שוני מול Progim — והסבר',w:42},
+];
+const UNIFIED_EMP_HEAD=EMP_SPEC.map(c=>c.h);
+// Workbook palette (light surface; status colors always paired with a label)
+const XL={NAVY:'FF1E3A5F', WHITE:'FFFFFFFF', TILE:'FFF4F5F7', MUTED:'FF6B7280',
+  GOODT:'FF0B7A0B', GOODB:'FFE7F4E7', BADT:'FFA82626', BADB:'FFFBE9E9',
+  WARNT:'FF8A5A00', WARNB:'FFFEF3D8', BAR:'FF2A78D6', REDBAR:'FFD03B3B'};
+const MONEY_FMT='#,##0.00', INT_FMT='#,##0';
+const fill=(argb)=>({type:'pattern',pattern:'solid',fgColor:{argb}});
+
+function styleHeaderRow(ws,labels,widths){
+  const r=ws.addRow(labels);
+  r.height=24;
+  r.eachCell(c=>{c.font={bold:true,color:{argb:XL.WHITE},size:11};
+    c.fill=fill(XL.NAVY); c.alignment={horizontal:'center',vertical:'middle',wrapText:true};});
+  widths.forEach((w,i)=>{ws.getColumn(i+1).width=w;});
+  return r;
+}
+// One employee-rows sheet, driven by EMP_SPEC: navy header, header row + the
+// first three columns (month/file/מסד) frozen so the ID stays put when scrolling
+// right through the money columns; autofilter; ₪ formats; status colored (with
+// its label); every gap cell tinted red when it carries a real gap so the eye
+// lands on it. The row's last element is the raw status (for coloring).
+function empSheet(wb,title,rows){
+  const ws=wb.addWorksheet(title,{views:[{rightToLeft:true,state:'frozen',xSplit:3,ySplit:1}]});
+  styleHeaderRow(ws,UNIFIED_EMP_HEAD,EMP_SPEC.map(c=>c.w));
+  const statusIdx=EMP_SPEC.findIndex(c=>c.status)+1;
+  const stRaw=EMP_SPEC.length;          // raw status is one past the visible cols
+  for(const row of rows){
+    const r=ws.addRow(row.slice(0,EMP_SPEC.length));
+    const invalid=row[stRaw]==='invalid';
+    EMP_SPEC.forEach((c,i)=>{
+      const cell=r.getCell(i+1);
+      if(c.fmt==='m') cell.numFmt=MONEY_FMT; else if(c.fmt==='n') cell.numFmt=INT_FMT;
+      // A gap cell with a non-trivial value gets a red tint — instantly visible.
+      if(c.diff && typeof cell.value==='number' && Math.abs(cell.value)>1){
+        cell.fill=fill(XL.BADB); cell.font={bold:true,color:{argb:XL.BADT}};
+      }
+      if(c.status){
+        cell.font={bold:invalid,color:{argb:invalid?XL.BADT:row[stRaw]==='valid'?XL.GOODT:XL.WARNT}};
+        if(invalid) cell.fill=fill(XL.BADB);
+      }
+    });
+  }
+  ws.autoFilter={from:{row:1,column:1},to:{row:Math.max(rows.length+1,1),column:EMP_SPEC.length}};
+  return ws;
+}
+
+async function downloadUnified(){
+  const btn=document.getElementById('dl-unified-btn');
+  if(!_bulkData){ showError('acc','יש לבחור קבצים תחילה.'); return; }
+  if(typeof ExcelJS==='undefined'){ showError('acc','ספריית כתיבת האקסל לא נטענה — בדוק את חיבור האינטרנט.'); return; }
+  showError('acc',''); btn.disabled=true;
+  try{
+    const wb=new ExcelJS.Workbook();
+    // ---- לוח בקרה ----------------------------------------------------------
+    const ws=wb.addWorksheet('לוח בקרה',{views:[{rightToLeft:true,showGridLines:false}]});
+    ws.mergeCells('A1:O1');
+    const title=ws.getCell('A1'); title.value='בדיקת התאמת תלושים — דוח מאוחד';
+    title.font={size:16,bold:true,color:{argb:XL.NAVY}};
+    ws.mergeCells('A2:O2');
+    const sub=ws.getCell('A2');
+    sub.value=`${_bulkData.perFile.length} קבצים · הופק ${new Date().toLocaleDateString('he-IL')} · מנטרל: משרה חלקית ← ותק סטודנט ← בסיס ← גמול השתלמות ← דריכות בי"ח ← גמול מנהל. הנותר = שגיאה אמיתית. (רטרו רב-תקופתי מחוץ לשרשרת)`;
+    sub.font={size:10,color:{argb:XL.MUTED}};
+    // Totals: sum the full-time neutralization fields across files.
+    const tot={workers:0,part_time:0,ft:0,ft_valid:0,inv_student:0,inv_base:0,inv_gmul:0,
+               inv_brich:0,inv_mnhal:0,inv_real:0,no_base:0,multi:0};
+    for(const s of _bulkData.perFile) for(const k in tot) tot[k]+=(s[k]||0);
+    const ftAct=tot.ft_valid+tot.inv_student+tot.inv_base+tot.inv_gmul+tot.inv_brich+tot.inv_mnhal+tot.inv_real;
+    const realPct=ftAct?tot.inv_real/ftAct:0;
+    const kpis=[['סה"כ עובדים',tot.workers,null,INT_FMT],['משרה מלאה',tot.ft,null,INT_FMT],
+      ['תקין (מלאה)',tot.ft_valid,XL.GOODT,INT_FMT],
+      ['שגויים אמיתיים',tot.inv_real,XL.BADT,INT_FMT],
+      ['% שגויים אמיתיים',realPct,realPct<=0.01?XL.GOODT:XL.BADT,'0.00%'],
+      ['ללא בסיס פעיל',tot.no_base,XL.WARNT,INT_FMT]];
+    kpis.forEach(([t,v,color,fmt],i)=>{
+      const col=i+1;
+      const tc=ws.getRow(4).getCell(col); tc.value=t; tc.font={size:10,color:{argb:XL.MUTED}};
+      tc.alignment={horizontal:'center',vertical:'bottom'}; tc.fill=fill(XL.TILE);
+      const vc=ws.getRow(5).getCell(col); vc.value=v; vc.numFmt=fmt;
+      vc.font={size:15,bold:true,color:{argb:color||'FF0B0B0B'}};
+      vc.alignment={horizontal:'center',vertical:'top'}; vc.fill=fill(XL.TILE);
+    });
+    ws.getRow(4).height=16; ws.getRow(5).height=24;
+    ws.addRow([]);
+    styleHeaderRow(ws,['חודש שכר','קובץ','עובדים','משרה חלקית','משרה מלאה','תקין (מלאה)',
+      'שגויי ותק סטודנט','שגויי בסיס','שגויי גמול','שגויי דריכות','שגויי גמול מנהל','שגויים אמיתיים','ללא בסיס','רטרו רב-תקופתי','% שגויים אמיתיים'],
+      [11,18,10,10,10,11,11,10,10,10,11,12,9,11,13]);
+    const headR=ws.lastRow.number;
+    for(const s of _bulkData.perFile){
+      const fa=s.ft_valid+(s.inv_student||0)+s.inv_base+s.inv_gmul+s.inv_brich+s.inv_mnhal+s.inv_real;
+      const rp=fa?s.inv_real/fa:0;
+      const r=ws.addRow([s.month,s.name,s.workers,s.part_time,s.ft,s.ft_valid,
+        s.inv_student||0,s.inv_base,s.inv_gmul,s.inv_brich,s.inv_mnhal,s.inv_real,s.no_base,s.multi,rp]);
+      for(let ci=3;ci<=14;ci++) r.getCell(ci).numFmt=INT_FMT;
+      r.getCell(6).font={color:{argb:XL.GOODT}};
+      [7,8,9,10,11].forEach(ci=>{ if(r.getCell(ci).value) r.getCell(ci).font={color:{argb:XL.WARNT}}; });
+      if(s.inv_real) r.getCell(12).font={bold:true,color:{argb:XL.BADT}};
+      r.getCell(15).numFmt='0.00%';
+    }
+    const lastR=ws.lastRow.number;
+    const trow=ws.addRow(['סה"כ','',tot.workers,tot.part_time,tot.ft,tot.ft_valid,
+      tot.inv_student,tot.inv_base,tot.inv_gmul,tot.inv_brich,tot.inv_mnhal,tot.inv_real,tot.no_base,tot.multi,realPct]);
+    trow.font={bold:true}; for(let ci=3;ci<=14;ci++) trow.getCell(ci).numFmt=INT_FMT;
+    trow.getCell(12).font={bold:true,color:{argb:XL.BADT}}; trow.getCell(15).numFmt='0.00%';
+    // % real errors — LOW is good.
+    ws.addConditionalFormatting({ref:`O${headR+1}:O${lastR}`,rules:[
+      {type:'cellIs',operator:'lessThanOrEqual',formulae:['0.01'],priority:1,
+       style:{font:{color:{argb:XL.GOODT}},fill:fill(XL.GOODB)}},
+      {type:'cellIs',operator:'greaterThan',formulae:['0.05'],priority:2,
+       style:{font:{color:{argb:XL.BADT}},fill:fill(XL.BADB)}},
+      {type:'cellIs',operator:'greaterThan',formulae:['0.01'],priority:3,
+       style:{font:{color:{argb:XL.WARNT}},fill:fill(XL.WARNB)}}]});
+    ws.addConditionalFormatting({ref:`C${headR+1}:C${lastR}`,rules:[
+      {type:'dataBar',minLength:0,maxLength:100,priority:4,cfvo:[{type:'num',value:0},{type:'max'}],color:{argb:XL.BAR}}]});
+    ws.addConditionalFormatting({ref:`L${headR+1}:L${lastR}`,rules:[
+      {type:'dataBar',minLength:0,maxLength:100,priority:5,cfvo:[{type:'num',value:0},{type:'max'}],color:{argb:XL.REDBAR}}]});
+
+    // ---- שגויים לבדיקה: full-time workers whose error is real -------------------
+    const inv=_bulkData.perEmp.filter(r=>r[STATUS_RAW_IDX]==='invalid'&&r[FT_IDX]&&r[ERRCAT_IDX]==='real')
+      .slice().sort((a,b)=>rowAnomaly(b)-rowAnomaly(a));
+    empSheet(wb,'שגויים לבדיקה',inv);
+    // ---- שינויי סטטוס בין חודשים ------------------------------------------------
+    const flips=computeFlips(_bulkData.perEmp);
+    if(flips.length){
+      const wsF=wb.addWorksheet('שינויי סטטוס',{views:[{rightToLeft:true,state:'frozen',ySplit:1}]});
+      styleHeaderRow(wsF,['מסד עובד','משרד','דרגה','תקין בחודש','שגוי בחודש','פער ₪'],[12,22,8,12,12,12]);
+      for(const f of flips){
+        const r=wsF.addRow([f.id,f.ministry,f.darga,f.from,f.to,f.diff]);
+        r.getCell(1).numFmt=INT_FMT; r.getCell(6).numFmt=MONEY_FMT;
+        r.getCell(5).font={bold:true,color:{argb:XL.BADT}};
+        r.getCell(6).font={bold:true,color:{argb:XL.BADT}};
+      }
+      wsF.autoFilter={from:{row:1,column:1},to:{row:flips.length+1,column:6}};
+    }
+    // ---- פר עובד --------------------------------------------------------------
+    empSheet(wb,'פר עובד',_bulkData.perEmp);
+    // ---- המלצות ל-Progim (מצב "Progim בלבד") ---------------------------------
+    if(_bulkData.recs&&_bulkData.recs.length){
+      const CAT_HE={shekel_mismatch:'סכום שקלי לא תואם',unstable_rule:'כלל לא יציב בקובץ',
+                    base_noise:'עיגול-בסיס (~₪15)',base_precision:'דיוק ותק/דרגה'};
+      const wsr=wb.addWorksheet('המלצות ל-Progim',{views:[{rightToLeft:true,state:'frozen',ySplit:2}]});
+      wsr.mergeCells('A1:F1');
+      const tc=wsr.getCell('A1');
+      tc.value='המלצות לעדכון ה-Progim — פערים שההרצה הרגילה מנטרלת, לסקירה והחלטה (לא תוקנו אוטומטית בתוכנה)';
+      tc.font={bold:true,size:12,color:{argb:XL.NAVY}}; wsr.getRow(1).height=22;
+      styleHeaderRow(wsr,['קטגוריה','סמל','רכיב',"מס' עובדים",'סכום פער ₪','המלצה'],[18,8,22,12,14,60]);
+      for(const r of _bulkData.recs){
+        const row=wsr.addRow([CAT_HE[r.category]||r.category,r.code,r.name,r.count,r.sum,r.suggestion]);
+        row.getCell(4).numFmt=INT_FMT; row.getCell(5).numFmt=MONEY_FMT;
+        row.getCell(6).alignment={wrapText:true};
+      }
+    }
+    // ---- פילוח משרדים ----------------------------------------------------------
+    const agg=new Map();
+    for(const r of _bulkData.perEmp){
+      const k=r[3]||'—';
+      if(!agg.has(k)) agg.set(k,{w:0,v:0,i:0});
+      const o=agg.get(k); o.w++; if(r[R_STATUS]==='valid')o.v++; else if(r[R_STATUS]==='invalid')o.i++;
+    }
+    const ws4=wb.addWorksheet('פילוח משרדים',{views:[{rightToLeft:true,state:'frozen',ySplit:1}]});
+    styleHeaderRow(ws4,['משרד / גוף','עובדים','תקין','שגוי','% תקינות (פעילים)'],[26,11,11,9,16]);
+    const rows4=[...agg.entries()].sort((a,b)=>b[1].w-a[1].w);
+    for(const [name,o] of rows4){
+      const act=o.v+o.i;
+      const r=ws4.addRow([name,o.w,o.v,o.i,act?o.v/act:null]);
+      [2,3,4].forEach(ci=>{r.getCell(ci).numFmt=INT_FMT;});
+      if(o.i) r.getCell(4).font={bold:true,color:{argb:XL.BADT}};
+      r.getCell(5).numFmt='0.0%';
+    }
+    const l4=ws4.lastRow.number;
+    ws4.addConditionalFormatting({ref:`B2:B${l4}`,rules:[
+      {type:'dataBar',minLength:0,maxLength:100,priority:1,cfvo:[{type:'num',value:0},{type:'max'}],color:{argb:XL.BAR}}]});
+    ws4.addConditionalFormatting({ref:`E2:E${l4}`,rules:[
+      {type:'cellIs',operator:'greaterThanOrEqual',formulae:['0.99'],priority:2,style:{fill:fill(XL.GOODB)}},
+      {type:'cellIs',operator:'lessThan',formulae:['0.95'],priority:3,style:{fill:fill(XL.BADB)}}]});
+    ws4.autoFilter={from:{row:1,column:1},to:{row:l4,column:5}};
+
+    const buf=await wb.xlsx.writeBuffer();
+    downloadBlob(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),`בדיקת שכר מאוחדת ${dateStamp()}.xlsx`);
+    const el=document.getElementById('bulk-dl-filename');
+    el.textContent=`הקובץ האחוד הורד · ${_bulkData.perFile.length} קבצים · ${_bulkData.perEmp.length.toLocaleString()} רשומות-עובד · ${inv.length.toLocaleString()} שגויים`;
+    el.style.display='block'; el.style.color='var(--green)';
+  }catch(e){ showError('acc',e.message||String(e)); }
+  finally{ btn.disabled=false; }
+}
+
+function renderAccuracy(d){
+  document.getElementById('acc-result').style.display='block';
+  const pct=d.accuracy_pct, color=pct>=90?'var(--green)':pct>=70?'var(--amber)':'var(--red)';
+  document.getElementById('a-pct').textContent=pct.toFixed(1)+'%';
+  document.getElementById('a-pct').style.color=color;
+  document.getElementById('a-sub').textContent=`${d.matched.toLocaleString()} תקינים מתוך ${(d.active_total||d.matched+d.unmatched).toLocaleString()} תלושים פעילים`;
+  const bar=document.getElementById('a-bar'); bar.style.width=pct+'%'; bar.style.background=color;
+  // Accuracy ring (r=52 → circumference 326.7).
+  const ring=document.getElementById('a-ring');
+  ring.style.stroke=color; ring.style.strokeDashoffset=(326.7*(1-pct/100)).toFixed(1);
+  // Status legend beside the ring.
+  const active=d.active_total||(d.matched+d.unmatched);
+  const leg=[['תקין','var(--green)',d.matched,`${(active?d.matched/active*100:0).toFixed(1)}% מהפעילים`],
+    ['שגוי — לבדיקה','var(--red)',d.unmatched,active?`${(d.unmatched/active*100).toFixed(1)}% מהפעילים`:''],
+    ['ללא בסיס פעיל','var(--amber)',d.no_base||0,'גמלאי / לא-פעיל'],
+    ['רטרו / רב-תקופתי','#94a3b8',d.multi_period||0,'רב-תקופתי']];
+  document.getElementById('a-legend').innerHTML=leg.map(([lbl,c,n,sub])=>
+    `<div class="leg"><span class="dot" style="background:${c}"></span><span>${lbl}<br><small>${sub}</small></span><b>${(n||0).toLocaleString()}</b></div>`).join('');
+  document.getElementById('a-total').textContent=d.total_workers.toLocaleString();
+  document.getElementById('a-avg').textContent='₪'+fmt(d.avg_diff);
+  document.getElementById('a-max').textContent='₪'+fmt(d.max_diff);
+  document.getElementById('a-time').textContent=d.elapsed_sec+' ש׳';
+  const tbody=document.getElementById('ministry-tbody'); tbody.innerHTML='';
+  d.by_ministry.forEach(m=>{
+    const p=m.accuracy_pct, col=p>=90?'var(--green)':p>=70?'var(--amber)':'var(--red)';
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${m.ministry_name||'—'}</td>
+      <td class="num">${m.workers}</td>
+      <td class="num" style="color:var(--green)">${m.matched}</td>
+      <td class="num" style="color:${col};font-weight:600">${p.toFixed(1)}%</td>
+      <td class="match-cell"><div class="match-bg"><div class="match-fill" style="width:${p}%;background:${col}"></div></div></td>`;
     tbody.appendChild(tr);
   });
+  renderMismatches(d.mismatches||[]);
 }
 
-async function runBatch(input) {
-  const file = input.files[0];
-  if(!file) return;
-  document.getElementById('batch-filename').textContent = file.name;
-  document.getElementById('batch-filename').style.display = 'block';
-  showError('batch','');
-  setProgress('batch',20);
+function renderMismatches(items){
+  const wrap=document.getElementById('mismatch-list'); wrap.innerHTML='';
+  const title=document.getElementById('mm-title'), hint=document.getElementById('mm-hint');
+  const show=items.length>0;
+  title.style.display=show?'':'none'; hint.style.display=show?'':'none';
+  items.forEach(m=>{
+    const diff=m.total_diff;
+    const item=document.createElement('div'); item.className='mm-item';
+    const head=document.createElement('button'); head.type='button'; head.className='mm-head';
+    head.setAttribute('aria-expanded','false');
+    head.innerHTML=`<span class="mm-chev" aria-hidden="true">▾</span>
+      <span class="mm-id num">${m.worker_id}</span>
+      <span class="mm-meta">דרגה ${m.darga_label} · ותק ${m.vatek}</span>
+      <span class="mm-diff num ${diff<0?'c-red':'c-amber'}">${diff>=0?'+':''}${fmt(diff)} ₪</span>`;
+    const body=document.createElement('div'); body.className='mm-body'; body.innerHTML=explainHTML(m);
+    head.addEventListener('click',()=>{
+      const open=item.classList.toggle('open');
+      head.setAttribute('aria-expanded',open?'true':'false');
+    });
+    item.appendChild(head); item.appendChild(body); wrap.appendChild(item);
+  });
+}
 
-  try {
-    const form = new FormData();
-    form.append('file',file);
-    setProgress('batch',50);
-    const r = await fetch(API+'/api/batch',{method:'POST',body:form});
-    setProgress('batch',95);
-    if(!r.ok) throw new Error('שגיאה בעיבוד הקובץ');
-    _csvBlob = await r.blob();
-    const workers = r.headers.get('X-Workers');
-    const pct = r.headers.get('X-Match-Pct');
-    setProgress('batch',100);
-    setTimeout(()=>setProgress('batch',null),500);
-
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(_csvBlob);
-    a.download = 'salary_results.csv';
-    a.click();
-    URL.revokeObjectURL(a.href);
-    document.getElementById('batch-zone').style.borderColor = 'var(--green)';
-    document.getElementById('batch-filename').textContent = `✓ הורד — ${Number(workers).toLocaleString()} עובדים, דיוק ${pct}%`;
-    document.getElementById('batch-filename').style.color = 'var(--green)';
-  } catch(e) {
-    showError('batch',e.message);
-    setTimeout(()=>setProgress('batch',null),500);
+function explainHTML(m){
+  let h='';
+  if(m.grade_base!=null && m.vatek_multiplier!=null){
+    h+=`<div class="mm-formula">מחושב = שכר יסוד <b>₪${fmt(m.grade_base)}</b> × מקדם ותק <b>${Number(m.vatek_multiplier).toFixed(4)}</b>`+
+       (m.job_pct&&m.job_pct!=1?` × חלקיות <b>${m.job_pct}</b>`:'')+`</div>`;
   }
+  const comps=m.components||[];
+  const maxv=Math.max(1,...comps.map(c=>Math.max(Math.abs(c.slip),Math.abs(c.computed))));
+  comps.forEach(c=>{
+    const sW=Math.max(2,Math.abs(c.slip)/maxv*100), cW=Math.max(2,Math.abs(c.computed)/maxv*100);
+    const cls=Math.abs(c.diff)<=1?'c-green':'c-red';
+    h+=`<div class="gap">
+      <div class="gap-name">${c.name||c.code}</div>
+      <div class="gap-bars">
+        <div class="gap-row"><span class="gap-lbl">בתלוש</span><div class="gap-track"><div class="gap-fill slip" style="width:${sW}%"></div></div><span class="num gap-val">₪${fmt(c.slip)}</span></div>
+        <div class="gap-row"><span class="gap-lbl">מחושב</span><div class="gap-track"><div class="gap-fill calc" style="width:${cW}%"></div></div><span class="num gap-val">₪${fmt(c.computed)}</span></div>
+      </div>
+      <div class="gap-diff ${cls} num">${c.diff>=0?'+':''}${fmt(c.diff)}</div>
+    </div>`;
+  });
+  const td=m.total_diff, dir=td<0?'נמוך מהתלוש':'גבוה מהתלוש';
+  h+=`<div class="mm-why"><b>הפער:</b> החישוב ${dir} ב-<b>₪${fmt(Math.abs(td))}</b>.</div>`;
+  // The itemized diagnosis (same content as the דוח-שגויים sheet).
+  const fs=m.findings||[];
+  if(fs.length){
+    h+=`<div class="mm-why" style="margin-top:8px"><b>אבחון:</b><ul style="margin:6px 18px 0 0;padding:0">`;
+    fs.forEach(f=>{ h+=`<li style="margin-bottom:4px"><b>${f.category}</b>${f.text?' — '+f.text:''}</li>`; });
+    h+=`</ul></div>`;
+  }
+  return h;
 }
 
-document.querySelectorAll('.upload-zone').forEach(z => {
+// Both downloads run off _lastResults (set by runAccuracy) — no second upload.
+function dlStatus(msg,ok){
+  const el=document.getElementById('dl-filename');
+  el.textContent=msg; el.style.display='block'; el.style.color=ok?'var(--green)':'';
+}
+async function withDlButton(btnId,fn){
+  const btn=document.getElementById(btnId);
+  if(!_lastResults){ showError('acc','יש לבדוק קובץ תחילה.'); return; }
+  if(typeof ExcelJS==='undefined'){ showError('acc','ספריית כתיבת האקסל לא נטענה — בדוק את חיבור האינטרנט.'); return; }
+  showError('acc',''); btn.disabled=true;
+  try{ await fn(); }
+  catch(e){ showError('acc',e.message||String(e)); }
+  finally{ btn.disabled=false; }
+}
+
+// דוח שגויים + dashboard for the two single-file downloads — reuses the shared
+// workbook styling infra (XL palette, fill(), styleHeaderRow, MONEY_FMT/INT_FMT).
+const BATCH_WIDTHS=[12,10,22,7,10,8,8,9,13,10,13,13,12,13,10,16,34,10,30];
+const BATCH_MONEY=[9,10,11,12,13,14]; // grade_base..gmul_diff in BATCH_COLUMNS
+function batchSheet(wb,title,rows){
+  const ws=wb.addWorksheet(title,{views:[{rightToLeft:true,state:'frozen',ySplit:1}]});
+  styleHeaderRow(ws,SalaryEngine.BATCH_COLUMNS,BATCH_WIDTHS);
+  for(const r of rows){
+    const row=ws.addRow(SalaryEngine.batchRow(r));
+    BATCH_MONEY.forEach(ci=>{ if(typeof row.getCell(ci).value==='number') row.getCell(ci).numFmt=MONEY_FMT; });
+    const st=row.getCell(16);
+    if(r.status==='valid') st.font={color:{argb:XL.GOODT}};
+    else if(r.status==='invalid'){ st.font={bold:true,color:{argb:XL.BADT}};
+      for(const ci of [13,14]) if(typeof row.getCell(ci).value==='number') row.getCell(ci).font={color:{argb:XL.BADT}}; }
+    else st.font={color:{argb:XL.WARNT}};
+  }
+  ws.autoFilter={from:{row:1,column:1},to:{row:Math.max(rows.length+1,1),column:SalaryEngine.BATCH_COLUMNS.length}};
+  return ws;
+}
+// Single-file dashboard — the front sheet of both single-file downloads.
+function addDashboardSheet(wb,results,title){
+  const ws=wb.addWorksheet('לוח בקרה',{views:[{rightToLeft:true,showGridLines:false}]});
+  const n={valid:0,invalid:0,no_base:0,multi_period:0}; for(const r of results) n[r.status]++;
+  const active=n.valid+n.invalid, acc=active?n.valid/active:0;
+  ws.mergeCells('A1:F1'); const t=ws.getCell('A1'); t.value=title; t.font={size:16,bold:true,color:{argb:XL.NAVY}};
+  ws.mergeCells('A2:F2'); const s=ws.getCell('A2');
+  s.value=`הופק ${new Date().toLocaleDateString('he-IL')} · תלוש תקין = הפרש עד ₪1 מהחישוב לפי טבלאות השכר`;
+  s.font={size:10,color:{argb:XL.MUTED}};
+  const kpis=[['סה"כ עובדים',results.length,null,INT_FMT],['תקינים',n.valid,XL.GOODT,INT_FMT],
+    ['שגויים — לבדיקה',n.invalid,XL.BADT,INT_FMT],['% תקינות (פעילים)',acc,acc>=0.99?XL.GOODT:XL.WARNT,'0.00%'],
+    ['ללא בסיס פעיל',n.no_base,XL.WARNT,INT_FMT],['רטרו / רב-תקופתי',n.multi_period,XL.WARNT,INT_FMT]];
+  kpis.forEach(([ti,v,color,fmt],i)=>{ const col=i+1;
+    const tc=ws.getRow(4).getCell(col); tc.value=ti; tc.font={size:10,color:{argb:XL.MUTED}};
+    tc.alignment={horizontal:'center',vertical:'bottom'}; tc.fill=fill(XL.TILE);
+    const vc=ws.getRow(5).getCell(col); vc.value=v; vc.numFmt=fmt;
+    vc.font={size:15,bold:true,color:{argb:color||'FF0B0B0B'}}; vc.alignment={horizontal:'center',vertical:'top'}; vc.fill=fill(XL.TILE);
+    ws.getColumn(col).width=17; });
+  ws.getRow(4).height=16; ws.getRow(5).height=24; ws.addRow([]);
+  styleHeaderRow(ws,['משרד / גוף','עובדים','תקין','שגוי','% תקינות'],[28,12,10,10,14]);
+  const byMin=new Map();
+  for(const r of results){ if(r.status!=='valid'&&r.status!=='invalid') continue;
+    const k=r.ministry_name||'—'; if(!byMin.has(k))byMin.set(k,{w:0,v:0}); const o=byMin.get(k); o.w++; if(r.status==='valid')o.v++; }
+  [...byMin.entries()].sort((a,b)=>b[1].w-a[1].w).slice(0,25).forEach(([name,o])=>{
+    const r=ws.addRow([name,o.w,o.v,o.w-o.v,o.w?o.v/o.w:0]);
+    [2,3,4].forEach(ci=>r.getCell(ci).numFmt=INT_FMT); r.getCell(5).numFmt='0.00%';
+    r.getCell(3).font={color:{argb:XL.GOODT}}; if(o.w-o.v) r.getCell(4).font={bold:true,color:{argb:XL.BADT}}; });
+  ws.views=[{rightToLeft:true,showGridLines:false}];
+}
+const REPORT_WIDTHS=[12,11,22,8,8,8,18,20,8,20,13,13,12,34];
+function addReportSheet(wb){
+  const ws=wb.addWorksheet('דוח שגויים',{views:[{rightToLeft:true,state:'frozen',ySplit:1}]});
+  styleHeaderRow(ws,SalaryEngine.REPORT_HEADERS,REPORT_WIDTHS);
+  const rows=SalaryEngine.reportRows(_lastResults);
+  for(const r of rows){ const row=ws.addRow(r);
+    [11,12,13].forEach(c=>{ if(typeof row.getCell(c).value==='number') row.getCell(c).numFmt=MONEY_FMT; });
+    if(typeof row.getCell(13).value==='number' && Math.abs(row.getCell(13).value)>1) row.getCell(13).font={color:{argb:XL.BADT},bold:true};
+  }
+  ws.autoFilter={from:{row:1,column:1},to:{row:Math.max(rows.length+1,1),column:SalaryEngine.REPORT_HEADERS.length}};
+  return rows.length;
+}
+
+async function downloadBatch(){
+  await withDlButton('dl-batch-btn',async()=>{
+    // Four sheets: 'לוח בקרה' (dashboard KPIs), 'תקין' (valid), 'לבדיקה'
+    // (everything else — status column distinguishes שגוי/ללא בסיס/רטרו), and
+    // 'דוח שגויים' with the itemized diagnosis of every non-valid slip.
+    const valid=_lastResults.filter(r=>r.status==='valid');
+    const review=_lastResults.filter(r=>r.status!=='valid');
+    const wb=new ExcelJS.Workbook();
+    addDashboardSheet(wb,_lastResults,'בדיקת התאמת תלושים — תוצאות');
+    batchSheet(wb,'תקין',valid);
+    batchSheet(wb,'לבדיקה',review);
+    const nFindings=addReportSheet(wb);
+    const buf=await wb.xlsx.writeBuffer();
+    downloadBlob(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),`תוצאות בדיקת שכר - תקין ולבדיקה ${dateStamp()}.xlsx`);
+    dlStatus(`יצוא התוצאות הורד · תקין ${valid.length.toLocaleString()} · לבדיקה ${review.length.toLocaleString()} · דוח שגויים ${nFindings.toLocaleString()} ממצאים`,true);
+  });
+}
+
+// Build the highlighted "גולמי מעודכן" pivot in the browser with ExcelJS (cell
+// fills + notes the SheetJS community build can't write).
+const PIVOT_META=['תוויות שורה','קוד משרד','שם משרד','חלקיות משרה','קוד דרגה','דרגה','ותק'];
+async function buildHighlightedWorkbook(pivot){
+  const r2=SalaryEngine.round2;
+  const wb=new ExcelJS.Workbook();
+  addDashboardSheet(wb,_lastResults,'גולמי מסומן — סיכום');
+  const ws=wb.addWorksheet('גולמי מעודכן',{views:[{rightToLeft:true}]});
+  const nMeta=PIVOT_META.length, codes=pivot.codesSorted, totalCol=nMeta+codes.length+1;
+  const codeCol={}; codes.forEach((c,i)=>codeCol[c]=nMeta+1+i);
+  ws.addRow([]); ws.addRow([]);
+  const row3=['סכום של סכום']; for(let i=1;i<nMeta;i++)row3.push(null);
+  codes.forEach(c=>row3.push(pivot.codeNames[c]||String(c))); row3.push(null);
+  ws.addRow(row3).font={italic:true,color:{argb:XL.muted},size:10};
+  ws.addRow([...PIVOT_META,...codes,'סכום כולל']);
+  const YELLOW={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFFF00'}};
+  let nFlagged=0,nInvalid=0;
+  for(const w of pivot.rows){
+    const line=new Array(totalCol).fill(null);
+    for(let i=0;i<nMeta;i++)line[i]=w.meta[i];
+    for(const [code,amt] of w.slipByCode) line[codeCol[code]-1]=r2(amt);
+    line[totalCol-1]=w.slipTotal!=null?r2(w.slipTotal):null;
+    const row=ws.addRow(line);
+    for(const [code,info] of w.invalidCodes){
+      const cell=row.getCell(codeCol[code]); cell.fill=YELLOW;
+      const lbl=info.rulebook?'ערך תקני לפי החוקה':'ערך תקני מחושב';
+      cell.note=`${lbl}: ${r2(info.computed)}\nבתלוש: ${r2(info.slip||0)}\nהפרש: ${r2(info.diff)}`;
+      nFlagged++;
+    }
+    if(w.totalInvalid){
+      const cell=row.getCell(totalCol); cell.fill=YELLOW;
+      cell.note=`סכום כולל מתוקן צפוי: ${r2(w.correctedTotal)}\nהפרש מהתלוש: ${r2(w.correctedTotal-(w.slipTotal||0))}`;
+      nFlagged++; nInvalid++;
+    }
+  }
+  // Navy header on the code row (row 4); freeze the header block above the data.
+  const hdr=ws.getRow(4); hdr.height=22;
+  hdr.eachCell(c=>{ c.font={bold:true,color:{argb:XL.WHITE},size:10};
+    c.fill=fill(XL.NAVY); c.alignment={horizontal:'center',vertical:'middle',wrapText:true}; });
+  [14,10,20,9,9,8,8].forEach((w,i)=>{ ws.getColumn(i+1).width=w; });
+  ws.views=[{rightToLeft:true,state:'frozen',ySplit:4}];
+  addReportSheet(wb);
+  const buf=await wb.xlsx.writeBuffer();
+  return {blob:new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),
+          nFlagged, nInvalid, nWorkers:pivot.rows.length};
+}
+
+async function downloadHighlighted(){
+  await withDlButton('dl-export-btn',async()=>{
+    const out=await buildHighlightedWorkbook(SalaryEngine.buildPivot(_lastResults));
+    downloadBlob(out.blob,`גולמי מסומן - שגיאות בצהוב ${dateStamp()}.xlsx`);
+    dlStatus(`הגולמי המסומן הורד · ${out.nWorkers.toLocaleString()} עובדים · ${out.nInvalid.toLocaleString()} שגויים · ${out.nFlagged.toLocaleString()} תאים מסומנים`,true);
+  });
+}
+
+document.querySelectorAll('.upload').forEach(z=>{
   z.addEventListener('dragover',e=>{e.preventDefault();z.classList.add('hover')});
   z.addEventListener('dragleave',()=>z.classList.remove('hover'));
-  z.addEventListener('drop',e=>{
-    e.preventDefault();z.classList.remove('hover');
-    const f=e.dataTransfer.files[0];
-    if(!f) return;
-    const inp=z.querySelector('input[type=file]');
-    const dt=new DataTransfer();dt.items.add(f);inp.files=dt.files;
-    inp.dispatchEvent(new Event('change'));
-  });
+  z.addEventListener('drop',e=>{e.preventDefault();z.classList.remove('hover');
+    const files=e.dataTransfer.files; if(!files||!files.length) return;
+    const inp=z.querySelector('input[type=file]'); const dt=new DataTransfer();
+    // Multi-file only where the input allows it (the file-check upload).
+    const n=inp.multiple?files.length:1;
+    for(let i=0;i<n;i++) dt.items.add(files[i]);
+    inp.files=dt.files;
+    inp.dispatchEvent(new Event('change'));});
 });
 
-addComp('שכר משולב',10002,4158.5);
-addComp('3.6% ת. שכר',4544,228.77);
-addComp('תוספת 2011',4994,165.29);
-
+// init
+addComp('יסוד משולב',1,4289.35);
+addComp('תוספת ותק',2,1940.58);
 checkStatus();
+loadTracks();
+loadGrades();
+loadComponents();
+loadMinistries();
+loadLiveTables();
 </script>
 </body>
 </html>

@@ -1,0 +1,654 @@
+{
+"categories": {
+"base": [
+"בסיס השכר",
+"ליבת השכר — נגזרת מהדרגה והוותק. כל שאר הרכיבים נבנים סביבה."
+],
+"minimum": [
+"השלמה לשכר מינימום",
+"תוספת שמבטיחה שהשכר לא יורד מתחת לשכר המינימום החוקי."
+],
+"percent": [
+"תוספות אחוזיות",
+"מחושבות כאחוז מהשכר המשולב — גדלות יחד עם הבסיס."
+],
+"shekel": [
+"תוספות שקליות",
+"סכום קבוע בשקלים מכוח הסכמי שכר — אינו תלוי בגובה הבסיס."
+],
+"gmul": [
+"גמולים והשתלמות",
+"תגמול על הכשרה/השתלמות או על תפקיד — לרוב אחוז מהבסיס."
+],
+"professional": [
+"תוספות מקצועיות",
+"תוספות לפי תפקיד/מקצוע (רפואה, מעבדה, כוננות) — מכוח הסכם ענפי."
+],
+"agreement": [
+"תוספות הסכם",
+"תוספות מכוח הסכמי שכר קיבוציים לפי שנה."
+],
+"deduction": [
+"ניכויים",
+"רכיבים שליליים — היעדרויות, ימי חופשה ללא תשלום וכד'."
+],
+"other": [
+"רכיבים נוספים",
+"תוספות והפרשים נוספים."
+]
+},
+"components": [
+{
+"code": 1,
+"name": "יסוד משולב",
+"n": 2643,
+"mean": 2797.57,
+"pensionable": true,
+"category": "base",
+"type": "בסיס"
+},
+{
+"code": 1699,
+"name": "תוספת חוק מינימום",
+"n": 2087,
+"mean": 1713.22,
+"pensionable": true,
+"category": "minimum",
+"type": "השלמה"
+},
+{
+"code": 2,
+"name": "תוספת ותק",
+"n": 2507,
+"mean": 757.98,
+"pensionable": true,
+"category": "base",
+"type": "בסיס"
+},
+{
+"code": 798,
+"name": "דריכות בי\"ח",
+"n": 1276,
+"mean": 1121.48,
+"pensionable": true,
+"category": "professional",
+"type": "תוספת מקצועית"
+},
+{
+"code": 4994,
+"name": "תוספת 2011",
+"n": 2512,
+"mean": 454.31,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 5402,
+"name": "תוספת שקלית 2016",
+"n": 2512,
+"mean": 406.74,
+"pensionable": true,
+"category": "shekel",
+"type": "סכום קבוע"
+},
+{
+"code": 1063,
+"name": "תוספת מנמ\"ש 2022",
+"n": 1540,
+"mean": 653.76,
+"pensionable": true,
+"category": "agreement",
+"type": "סכום קבוע"
+},
+{
+"code": 5524,
+"name": "תוספת שקלית 2023",
+"n": 2512,
+"mean": 388.48,
+"pensionable": true,
+"category": "shekel",
+"type": "סכום קבוע"
+},
+{
+"code": 5216,
+"name": "תוספת מנמ\"ש 2010",
+"n": 1524,
+"mean": 485.09,
+"pensionable": true,
+"category": "agreement",
+"type": "סכום קבוע"
+},
+{
+"code": 4934,
+"name": "תוספת 2009",
+"n": 2512,
+"mean": 272.96,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 5401,
+"name": "תוספת אחוזית 2016",
+"n": 2512,
+"mean": 271.84,
+"pensionable": true,
+"category": "percent",
+"type": "אחוז מהבסיס"
+},
+{
+"code": 5340,
+"name": "בי\"ח-מאוחדת",
+"n": 1501,
+"mean": 439.48,
+"pensionable": true,
+"category": "professional",
+"type": "תוספת מקצועית"
+},
+{
+"code": 5533,
+"name": "תוספת אחוזית 2024",
+"n": 2512,
+"mean": 255.32,
+"pensionable": true,
+"category": "percent",
+"type": "אחוז מהבסיס"
+},
+{
+"code": 4550,
+"name": "תוספת 2001",
+"n": 937,
+"mean": 627.82,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 4544,
+"name": "תוספת שכר 3.6%",
+"n": 2512,
+"mean": 189.67,
+"pensionable": true,
+"category": "percent",
+"type": "אחוז מהבסיס"
+},
+{
+"code": 667,
+"name": "גמול השתלמות",
+"n": 1304,
+"mean": 327.55,
+"pensionable": true,
+"category": "gmul",
+"type": "אחוז/סכום"
+},
+{
+"code": 897,
+"name": "גמ.השתל.ב '",
+"n": 944,
+"mean": 398.02,
+"pensionable": true,
+"category": "gmul",
+"type": "אחוז/סכום"
+},
+{
+"code": 1096,
+"name": "תוספת מנמ\"ש מטה 2022",
+"n": 491,
+"mean": 682.9,
+"pensionable": true,
+"category": "agreement",
+"type": "סכום קבוע"
+},
+{
+"code": 736,
+"name": "תוספת מינהל",
+"n": 503,
+"mean": 413.17,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 697,
+"name": "תוספת מיוחדת",
+"n": 259,
+"mean": 341.1,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 1044,
+"name": "שעות העדרות",
+"n": 191,
+"mean": -411.0,
+"pensionable": true,
+"category": "deduction",
+"type": "ניכוי"
+},
+{
+"code": 6920,
+"name": "הפרשי פנסיוני וקה\"ש",
+"n": 6,
+"mean": 10061.77,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 4624,
+"name": "הסכם שכר 99",
+"n": 531,
+"mean": 71.3,
+"pensionable": true,
+"category": "agreement",
+"type": "סכום/אחוז"
+},
+{
+"code": 4643,
+"name": "השלמת שכר",
+"n": 750,
+"mean": 44.82,
+"pensionable": true,
+"category": "minimum",
+"type": "השלמה"
+},
+{
+"code": 1927,
+"name": "ד. פג. בעבודה",
+"n": 5,
+"mean": 5749.82,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 1082,
+"name": "תוספת ברה\"ן 2022",
+"n": 46,
+"mean": 504.85,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 4169,
+"name": "ענ\"א 16.2%",
+"n": 18,
+"mean": 1061.48,
+"pensionable": true,
+"category": "percent",
+"type": "אחוז מהבסיס"
+},
+{
+"code": 1027,
+"name": "ימי העדרות",
+"n": 39,
+"mean": -462.47,
+"pensionable": true,
+"category": "deduction",
+"type": "ניכוי"
+},
+{
+"code": 5536,
+"name": "תוספת יישום",
+"n": 35,
+"mean": 496.43,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 659,
+"name": "ת.קר' קליני",
+"n": 34,
+"mean": 475.64,
+"pensionable": true,
+"category": "professional",
+"type": "תוספת מקצועית"
+},
+{
+"code": 5539,
+"name": "תוספת ממונה",
+"n": 13,
+"mean": 1203.23,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 1936,
+"name": "ד.פגיעה בעבודה",
+"n": 9,
+"mean": 1433.56,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 1524,
+"name": "העדרות",
+"n": 11,
+"mean": -1140.11,
+"pensionable": true,
+"category": "deduction",
+"type": "ניכוי"
+},
+{
+"code": 853,
+"name": "שט.מיוחד ב'",
+"n": 8,
+"mean": 1152.95,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 1059,
+"name": "שעות בשכר",
+"n": 5,
+"mean": 1719.07,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 764,
+"name": "תוספת מנמ\"ש",
+"n": 21,
+"mean": 353.75,
+"pensionable": true,
+"category": "agreement",
+"type": "סכום קבוע"
+},
+{
+"code": 756,
+"name": "אחוז ממשולב",
+"n": 29,
+"mean": 241.58,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 4453,
+"name": "דריכות וכונ",
+"n": 7,
+"mean": 933.0,
+"pensionable": true,
+"category": "professional",
+"type": "תוספת מקצועית"
+},
+{
+"code": 7902,
+"name": "הפרשי פנסיוני וקה\"ש",
+"n": 5,
+"mean": -1128.11,
+"pensionable": true,
+"category": "deduction",
+"type": "ניכוי"
+},
+{
+"code": 626,
+"name": "ס. פסיכיאטרי",
+"n": 309,
+"mean": 8.69,
+"pensionable": true,
+"category": "professional",
+"type": "תוספת מקצועית"
+},
+{
+"code": 4173,
+"name": "תוספת אישית",
+"n": 3,
+"mean": 859.77,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 600,
+"name": "ת. בית חולים",
+"n": 44,
+"mean": 56.87,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 728,
+"name": "ת. גריאטריה",
+"n": 107,
+"mean": 21.04,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 1266,
+"name": "דמי הבראה",
+"n": 14,
+"mean": 160.52,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 630,
+"name": "שט.מיוחד א'",
+"n": 8,
+"mean": 180.67,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 5268,
+"name": "ליווי אח\"מים",
+"n": 2,
+"mean": 666.84,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 669,
+"name": "תוספת בוררות",
+"n": 23,
+"mean": 51.09,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 647,
+"name": "גמול השתלמות א",
+"n": 5,
+"mean": 223.24,
+"pensionable": true,
+"category": "gmul",
+"type": "אחוז/סכום"
+},
+{
+"code": 1934,
+"name": "ד.פג.בעבודה",
+"n": 4,
+"mean": 274.17,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 636,
+"name": "תוספת מנמש",
+"n": 2,
+"mean": 353.76,
+"pensionable": true,
+"category": "agreement",
+"type": "סכום קבוע"
+},
+{
+"code": 1711,
+"name": "נכוי 6% א\"ע",
+"n": 1,
+"mean": -596.48,
+"pensionable": true,
+"category": "deduction",
+"type": "ניכוי"
+},
+{
+"code": 805,
+"name": "תוספת ערבה",
+"n": 4,
+"mean": 139.06,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 5439,
+"name": "ת.שקלית תואר שני",
+"n": 1,
+"mean": -455.55,
+"pensionable": true,
+"category": "deduction",
+"type": "ניכוי"
+},
+{
+"code": 5271,
+"name": "ימי חג",
+"n": 1,
+"mean": 397.64,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 5273,
+"name": "ימי בחירה (71)",
+"n": 1,
+"mean": -370.07,
+"pensionable": true,
+"category": "deduction",
+"type": "ניכוי"
+},
+{
+"code": 1965,
+"name": "גמול השתלמות תואר",
+"n": 1,
+"mean": 354.27,
+"pensionable": true,
+"category": "gmul",
+"type": "אחוז/סכום"
+},
+{
+"code": 1375,
+"name": "ביגוד",
+"n": 1,
+"mean": 326.01,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 516,
+"name": "חינוך מיוחד",
+"n": 1,
+"mean": 286.79,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 681,
+"name": "תוספת פנימיה",
+"n": 1,
+"mean": 173.25,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 1695,
+"name": "תוספת חוק מינימום",
+"n": 2,
+"mean": 78.53,
+"pensionable": true,
+"category": "minimum",
+"type": "השלמה"
+},
+{
+"code": 5528,
+"name": "שימור לא לערך שעה",
+"n": 1,
+"mean": 98.4,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 5527,
+"name": "וותק סטודנט",
+"n": 3,
+"mean": 26.87,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 1260,
+"name": "דמי הבראה",
+"n": 3,
+"mean": 19.5,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 918,
+"name": "תוספת סיכון",
+"n": 3,
+"mean": 13.14,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 965,
+"name": "פסיכ / גריאטריה",
+"n": 1,
+"mean": 30.87,
+"pensionable": true,
+"category": "professional",
+"type": "תוספת מקצועית"
+},
+{
+"code": 3,
+"name": "וותק",
+"n": 1,
+"mean": 4.35,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 6902,
+"name": "הפרשי פנסיוני וקה\"ש",
+"n": 1,
+"mean": 0.0,
+"pensionable": true,
+"category": "other",
+"type": "תוספת"
+},
+{
+"code": 5260,
+"name": "השלמה לשכר מינימום",
+"n": 1,
+"mean": 0.0,
+"pensionable": true,
+"category": "minimum",
+"type": "השלמה"
+}
+]
+}

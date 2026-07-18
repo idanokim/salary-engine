@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.vercel
+.venv/
+venv/
+reports/

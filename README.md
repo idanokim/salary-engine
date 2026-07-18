@@ -1,19 +1,74 @@
-# Salary Engine API
+# Salary Engine API — Pay Simulator
 
-REST API for Israeli civil service salary calculations (מנהלי grade type).
-Built with FastAPI. Deploys to Render in ~3 minutes.
+Multi-track salary simulator for Israeli civil-service pay (מנהלת הגמלאות).
+Given a worker's track (דירוג), grade (דרגה), seniority (ותק) and job %, it
+computes the expected salary from the official pay tables and flags each pay
+slip as **valid (תקין)** or **invalid (שגוי)**. Built with FastAPI.
+
+📖 **How the engine works:** see [`ENGINE.md`](ENGINE.md) — "the brain of the simulator".
+📖 **עדכון חוברת Progim:** see [`docs/PROGIM_UPDATE.md`](docs/PROGIM_UPDATE.md).
+
+The pay tables (75 grades, 9 seniority tracks, per-track caps) are extracted
+from the Progim workbook into `lookups.json` via `tools/extract_lookups.py`,
+and the component rules (החוקה — percentage bases/rates per pay code, plus the
+manual 'ידני' codes) into `component_rules.json` via `tools/extract_rules.py`.
 
 ## Live endpoints (once deployed)
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/` | GET | Health check |
-| `/api/info` | GET | Engine status and loaded data |
-| `/api/calculate` | POST | Calculate one worker's salary |
-| `/api/batch` | POST | Upload a גולמי .xlsx, get results CSV |
-| `/api/grades` | GET | All grade codes and base salaries |
-| `/api/vatek/{years}` | GET | Seniority multiplier for N years |
+| `/` | GET | Web UI (single-worker calculator + file validation) |
+| `/healthz` | GET | Health check |
+| `/api/info` | GET | Engine status: grades, tracks, seniority caps |
+| `/api/calculate` | POST | Calculate + validate one worker's salary |
+| `/api/accuracy` | POST | Upload a גולמי .xlsx → valid/invalid slip stats |
+| `/api/batch` | POST | Upload a גולמי .xlsx → results .xlsx with two tabs: **תקין** (valid) and **לבדיקה** (everything else) |
+| `/api/export-highlighted` | POST | Upload a גולמי .xlsx → the same גולמי-מעודכן pivot back, with every invalid pay code and wrong total marked **yellow** |
+| `/api/lookups` | GET | Full lookup tables (darga/vetek/caps) — lets the web UI run the engine **in the browser** |
+| `/api/rules` | GET | Component rules (החוקה) from the Progim workbook — percentage bases/rates + manual (ידני) codes |
+
+> **Browser-side file checking:** the web UI parses and validates גולמי files
+> **locally in the browser** (SheetJS + `engine.js`, the same logic as the API),
+> so large files are never uploaded — this sidesteps serverless request-body
+> limits (e.g. Vercel rejects bodies over ~4.5 MB). The `/api/accuracy`,
+> `/api/batch` and `/api/export-highlighted` endpoints remain for API clients.
+| `/api/grades` | GET | All grade labels and base salaries |
+| `/api/tracks` | GET | All seniority tracks and their ותק caps |
+| `/api/vatek/{years}?track=N` | GET | Seniority multiplier for a track |
 | `/docs` | GET | Interactive Swagger UI (try it in browser) |
+
+---
+
+## Deploy to Vercel (free)
+
+The repo is Vercel-ready: `api/index.py` exposes the FastAPI app as a serverless
+function, `vercel.json` rewrites every route to it (so the frontend at `/`, the
+API under `/api/...`, and `/docs` all work), and the reference data
+(`golmi.xlsx`) is bundled via `includeFiles`.
+
+### Option A — Dashboard
+
+1. Push this repo to GitHub.
+2. Go to [vercel.com](https://vercel.com) → **Add New → Project** → import the repo.
+3. Leave all build settings at their defaults (Vercel auto-detects the Python
+   function and `requirements.txt`) and click **Deploy**.
+
+Your app will be live at `https://<project>.vercel.app`:
+- `/` — the interactive frontend (calls the API on the same origin)
+- `/docs` — Swagger UI
+- `/api/info`, `/api/calculate`, `/api/accuracy`, `/api/batch`, ...
+
+### Option B — CLI
+
+```bash
+npm i -g vercel
+vercel        # preview deploy
+vercel --prod # production deploy
+```
+
+> Note: the batch/accuracy endpoints parse the full Excel file in-memory. On
+> Vercel's Hobby plan the function timeout caps at 60s (`maxDuration` in
+> `vercel.json`); very large uploads may need a paid plan.
 
 ---
 
